@@ -283,15 +283,15 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
                          ifelse(df$access_burden_for_filter == "Medium", 6,
                                 ifelse(df$access_burden_for_filter == "High", 2, 0)))
 
-  linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 5,
-                          ifelse(tolower(df$linkage_potential) == "medium", 3, 0))
-  demo_score <- ifelse(tolower(df$demo_include) %in% c("yes", "candidate"), 5, 0)
+  linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 10,
+                          ifelse(tolower(df$linkage_potential) == "medium", 5, 0))
+  #demo_score <- ifelse(tolower(df$demo_include) %in% c("yes", "candidate"), 5, 0)
 
   out <- df |>
     dplyr::mutate(
       keyword_hits = term_hits,
       matched_terms = purrr::map_chr(search_text, matched_terms, terms = terms),
-      match_score = round(pmin(100, keyword_score + category_score + data_type_score + geography_score + access_score + linkage_score + demo_score), 1),
+      match_score = round(pmin(100, keyword_score + category_score + data_type_score + geography_score + access_score + linkage_score), 1),
       why_matched = dplyr::case_when(
         nchar(matched_terms) > 0 ~ paste0("Matched terms: ", matched_terms, ". Category: ", category_for_filter, ". Access: ", access_level_standardized, "."),
         TRUE ~ paste0("Category: ", category_for_filter, ". Access: ", access_level_standardized, ".")
@@ -331,88 +331,308 @@ DEFAULT_GEO <- c("United States", "South Carolina", "Global/international", "Sta
 DEFAULT_ACCESS <- c("Open/public", "Registered public-use", "Registered/controlled", "Credentialed access", "Controlled/restricted", "Public-use plus restricted files", "Open plus controlled data", "Open plus credentialed access", "Open/public with terms")
 ```
 
+
+
 ## 4. App interface
 
 ```{r ui, echo=FALSE}
+
 tags$head(
-  tags$style(HTML("\n    .data-card {border: 1px solid #D6E2EA; border-radius: 8px; padding: 14px; margin-bottom: 12px; background: #FFFFFF;}\n    .data-card h4 {margin-top: 0;}\n    .small-note {font-size: 90%; color: #555;}\n    .metric {font-weight: 700;}\n  "))
+  tags$style(HTML("
+    .data-card {
+      border: 1px solid #D6E2EA;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+      background: #FFFFFF;
+    }
+
+    .data-card h4 {
+      margin-top: 0;
+    }
+
+    .small-note {
+      font-size: 90%;
+      color: #555;
+    }
+
+    .metric {
+      font-weight: 700;
+    }
+    
+    .rdcd-app .shiny-input-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    }
+
+    .shiny-input-container {
+      margin-bottom: 10px;
+    }
+
+    .form-group {
+      margin-bottom: 10px;
+    }
+
+    .selectize-input {
+      min-height: 34px;
+    }
+
+    /* Equal-height layout */
+
+    .rdcd-app .row {
+      display: flex;
+      align-items: stretch;
+    }
+
+    .rdcd-app .sidebarPanel,
+    .rdcd-app .mainPanel {
+      float: none !important;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .rdcd-app .sidebarPanel {
+      background: #F8FAFC;
+      border-right: 1px solid #D6E2EA;
+      padding-right: 15px;
+      min-height: 100%;
+    }
+
+    .rdcd-app .mainPanel {
+      min-width: 0;
+      padding-left: 20px;
+    }
+    
+    .rdcd-app .sidebarPanel,
+    .rdcd-app .mainPanel {
+     min-height: calc(100vh - 120px);
+    }
+
+    .rdcd-app .well {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      margin-bottom: 0;
+    }
+  ")),
+  tags$script(HTML("
+  function syncRdcdPanelHeights() {
+    var left = document.querySelector('.rdcd-app .sidebarPanel');
+    var right = document.querySelector('.rdcd-app .mainPanel');
+    if (!left || !right) return;
+
+    left.style.height = 'auto';
+    right.style.height = 'auto';
+
+    var h = Math.max(left.offsetHeight, right.offsetHeight);
+    left.style.height = h + 'px';
+    right.style.height = h + 'px';
+  }
+
+  $(document).on('shiny:recalculated', syncRdcdPanelHeights);
+  $(window).on('resize', syncRdcdPanelHeights);
+  $(document).on('shiny:connected', syncRdcdPanelHeights);
+"))
 )
 
-sidebarLayout(
-  sidebarPanel(
-    width = 3,
-    h4("Search inputs"),
-    fileInput(
-      "catalog_file",
-      "Upload data preparation workbook",
-      accept = c(".xlsx")
-    ),
-    p(class = "small-note", "Leave blank to use RDCD_Data_Source_Preparation_Template.xlsx in the working directory, or the built-in demo rows if the workbook is unavailable."),
-    textAreaInput(
-      "question",
-      "Research question or concept",
-      value = "Diabetes outcomes in rural South Carolina communities with interest in social vulnerability, food access, and health care access.",
-      rows = 4
-    ),
-    textInput(
-      "keyword_string",
-      "Additional keywords, separated by commas or semicolons",
-      value = "diabetes; rural; South Carolina; social vulnerability; food access; Medicaid"
-    ),
-    checkboxInput("use_category_expansion", "Expand search using category keyword dictionary", TRUE),
-    selectizeInput("category_filter", "Category filters", choices = DEFAULT_CATEGORIES, multiple = TRUE),
-    selectizeInput("data_type_filter", "Data type filters", choices = DEFAULT_DATA_TYPES, multiple = TRUE),
-    selectizeInput("geography_filter", "Geography filters", choices = DEFAULT_GEO, multiple = TRUE),
-    selectizeInput("access_filter", "Access-level filters", choices = DEFAULT_ACCESS, multiple = TRUE),
-    checkboxInput("open_only", "Show only open/public or low-burden sources", FALSE),
-    sliderInput("min_score", "Minimum match score", min = 0, max = 100, value = 15, step = 5),
-    numericInput("top_n", "Number of top results to display", value = 10, min = 5, max = 50, step = 5),
-    actionButton("demo_diabetes", "Load diabetes/SC demo"),
-    br(), br(),
-    downloadButton("download_results", "Download current results")
+
+
+
+div(
+  class = "rdcd-app",
+
+  sidebarLayout(
+
+    sidebarPanel(
+      width = 4,
+
+      h4("Search Inputs"),
+
+      fileInput(
+        "catalog_file",
+        "Workbook",
+        accept = c(".xlsx")
+      ),
+
+      p(
+        class = "small-note",
+        "Upload a completed RDCD Data Source Preparation workbook or use the default workbook."
+      ),
+
+      tags$hr(),
+
+      h5("Research Question"),
+
+    shiny::tagAppendAttributes(
+  textAreaInput(
+    "question",
+    NULL,
+    value = "",
+    rows = 4,
+    width = "100%"
   ),
-  mainPanel(
-    width = 9,
-    tabsetPanel(
-      tabPanel(
-        "Top Matches",
-        br(),
-        uiOutput("result_summary"),
-        DT::DTOutput("results_table")
+  style = paste(
+    "resize: none !important;",
+    "width: 100% !important;",
+    "max-width: 100% !important;",
+    "min-width: 0 !important;",
+    "height: 120px !important;",
+    "min-height: 120px !important;",
+    "max-height: 120px !important;",
+    "overflow-y: auto !important;",
+    "overflow-x: hidden !important;",
+    "box-sizing: border-box !important;"
+  )
+),
+
+      textInput(
+        "keyword_string",
+        "Keywords",
+        value = ""
       ),
-      tabPanel(
-        "Data Source Cards",
-        br(),
-        uiOutput("source_cards")
+
+      checkboxInput(
+        "use_category_expansion",
+        "Expand search using category keyword dictionary",
+        TRUE
       ),
-      tabPanel(
-        "Compare Sources",
-        br(),
-        uiOutput("compare_picker"),
-        DT::DTOutput("compare_table")
+
+      tags$hr(),
+
+      h5("Filters"),
+
+      selectizeInput(
+        "category_filter",
+        "Category",
+        choices = DEFAULT_CATEGORIES,
+        multiple = TRUE,
+        options = list(
+          placeholder = "Select categories"
+        )
       ),
-      tabPanel(
-        "Visual Summary",
-        br(),
-        plotOutput("score_plot", height = "420px"),
-        plotOutput("category_plot", height = "420px")
+
+      selectizeInput(
+        "data_type_filter",
+        "Data Type",
+        choices = DEFAULT_DATA_TYPES,
+        multiple = TRUE,
+        options = list(
+          placeholder = "Select data types"
+        )
       ),
-      tabPanel(
-        "Data Fit Summary",
-        br(),
-        verbatimTextOutput("fit_summary"),
-        br(),
-        downloadButton("download_summary", "Download summary text")
+
+      selectizeInput(
+        "geography_filter",
+        "Geography",
+        choices = DEFAULT_GEO,
+        multiple = TRUE,
+        options = list(
+          placeholder = "Select geography"
+        )
       ),
-      tabPanel(
-        "Methods",
-        br(),
-        htmlOutput("methods_text")
+
+      selectizeInput(
+        "access_filter",
+        "Access Level",
+        choices = DEFAULT_ACCESS,
+        multiple = TRUE,
+        options = list(
+          placeholder = "Select access levels"
+        )
+      ),
+
+      checkboxInput(
+        "open_only",
+        "Show only open/public or low-burden sources",
+        FALSE
+      ),
+
+      sliderInput(
+        "min_score",
+        "Minimum Match Score",
+        min = 0,
+        max = 100,
+        value = 15,
+        step = 5
+      ),
+
+      numericInput(
+        "top_n",
+        "Number of Results",
+        value = 10,
+        min = 5,
+        max = 50,
+        step = 5
+      ),
+
+      tags$hr(),
+
+      h5("Export"),
+
+      downloadButton(
+        "download_results",
+        "Download Results"
+      )
+
+    ),
+
+    mainPanel(
+      width = 8,
+
+      tabsetPanel(
+
+        tabPanel(
+          "Top Matches",
+          br(),
+          uiOutput("result_summary"),
+          DT::DTOutput("results_table")
+        ),
+
+        tabPanel(
+          "Data Source Cards",
+          br(),
+          uiOutput("source_cards")
+        ),
+
+        tabPanel(
+          "Compare Sources",
+          br(),
+          uiOutput("compare_picker"),
+          DT::DTOutput("compare_table")
+        ),
+
+        tabPanel(
+          "Visual Summary",
+          br(),
+          plotOutput("score_plot", height = "420px"),
+          plotOutput("category_plot", height = "420px")
+        ),
+
+        tabPanel(
+          "Data Fit Summary",
+          br(),
+          verbatimTextOutput("fit_summary"),
+          br(),
+          downloadButton(
+            "download_summary",
+            "Download Summary Text"
+          )
+        ),
+
+        tabPanel(
+          "Methods",
+          br(),
+          htmlOutput("methods_text")
+        )
+
       )
     )
   )
 )
 ```
+
 
 ## 5. Server logic
 
@@ -454,28 +674,30 @@ observe({
   updateSelectizeInput(session, "access_filter", choices = access_choices, server = TRUE)
 })
 
-observeEvent(input$demo_diabetes, {
-  updateTextAreaInput(
-    session,
-    "question",
-    value = "Diabetes outcomes in rural South Carolina communities with interest in social vulnerability, food access, and health care access."
-  )
-  updateTextInput(
-    session,
-    "keyword_string",
-    value = "diabetes; rural; South Carolina; social vulnerability; food access; Medicaid"
-  )
-  updateSelectizeInput(
-    session,
-    "category_filter",
-    selected = c("Chronic disease", "SDOH/geospatial", "Rurality", "South Carolina/local data")
-  )
-  updateSelectizeInput(
-    session,
-    "geography_filter",
-    selected = c("South Carolina", "County-level", "Census tract", "ZIP/ZCTA")
-  )
-})
+## Removing the demo button
+
+# observeEvent(input$demo_diabetes, {
+#   updateTextAreaInput(
+#     session,
+#     "question",
+#     value = "Diabetes outcomes in rural South Carolina communities with interest in social vulnerability, food access, and health care access."
+#   )
+#   updateTextInput(
+#     session,
+#     "keyword_string",
+#     value = "diabetes; rural; South Carolina; social vulnerability; food access; Medicaid"
+#   )
+#   updateSelectizeInput(
+#     session,
+#     "category_filter",
+#     selected = c("Chronic disease", "SDOH/geospatial", "Rurality", "South Carolina/local data")
+#   )
+#   updateSelectizeInput(
+#     session,
+#     "geography_filter",
+#     selected = c("South Carolina", "County-level", "Census tract", "ZIP/ZCTA")
+#   )
+# })
 
 search_terms <- reactive({
   terms <- unique(c(extract_words(input$question), split_terms(input$keyword_string)))
