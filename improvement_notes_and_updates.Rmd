@@ -1,0 +1,36 @@
+---
+title: "Notes for Improvements"
+output: html_document
+date: "2026-07-09"
+---
+
+Matching:
+
+I've been working on trying to improve the matching, but it still has a long way to go. Currently the test Rmd is different than the test Rmd so you can see the difference in what data gets suggested for the same search terms. I also have a table of test phrases and the kind of datasets that should be suggested vs what actually is which I'll get to you. [SP, 7/9]
+
+Maternal mortality is a phrase I've been looking at a lot. If you just type in maternal, then you get reasonable results. The moment you put mortality in after it, the first result is SEER which is a problem. [SP, 7/9]
+
+## Top Matches Section
+
+- I think Access Burden, match score, Geography, and Why matched can be taken and put into a more information section that Jiajia mentioned ( i want to wait to get rid of match score though until the scoring is figured out)
+
+## Compare sources section
+
+- I think limitations should be under more information somewhere else, it's inflating the size of the output too much.
+- might want to consider flipping the table for this one 
+
+## Visual summary section
+
+-Is this section necessary. I feel like this can be added to compare sources
+
+## Data fit summary section
+
+- this section just looks bad and needs to be fixed up
+
+## Methods section
+
+- Not sure this section is necessary. I think it can be taken out. Any information on how to use it will be available through github
+
+## Future Ideas
+
+- In GitHub have a "Upload your own workbook" section that explains how to upload and use your own workbook. We would provide links to 2 copies of the workbook: the default workbook we use that can be edited/added to for their own work/institution and a blank workbook with all the necessary sections so they can start from scratch.
