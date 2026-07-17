@@ -70,27 +70,7 @@ extract_words <- function(x) {
 }
 
 #part of 7/9 fix for search_terms change
-expand_terms_with_dictionary <- function(terms, dict) {
-  if (length(terms) == 0) return(character())
 
-  dict_lookup <- dict |>
-    dplyr::mutate(
-      all_terms = paste(category, core_keywords, synonyms_related_terms, example_sources, sep = "; ")
-    )
-
-  hits <- purrr::map_chr(terms, function(term) {
-    matched <- dict_lookup$all_terms[
-      stringr::str_detect(
-        tolower(dict_lookup$all_terms),
-        stringr::fixed(tolower(term))
-      )
-    ]
-    if (length(matched) == 0) return("")
-    paste(matched, collapse = "; ")
-  })
-
-  unique(split_terms(hits))
-}
 
 contains_any <- function(text, terms) {
   if (length(terms) == 0) return(rep(FALSE, length(text)))
@@ -158,54 +138,6 @@ infer_data_type <- function(text) {
     stringr::str_detect(text, "synthetic") ~ "Synthetic data",
     TRUE ~ "Other"
   )
-}
-
-fallback_category_dict <- tibble::tribble(
-  ~category, ~core_keywords, ~synonyms_related_terms, ~example_sources,
-  "Chronic disease", "diabetes; obesity; hypertension; cardiovascular; asthma; COPD; chronic disease; prevention", "heart disease; CVD; cardiometabolic", "NHANES; BRFSS; CDC PLACES; CDC WONDER",
-  "Cancer", "cancer; tumor; oncology; incidence; survival; mortality; staging; treatment", "malignancy; neoplasm; SEER; TCGA", "SEER; GDC/TCGA; TCIA; CDC WONDER",
-  "Aging", "aging; retirement; cognition; disability; frailty; older adults; long-term care", "elderly; geriatric", "HRS; WHI; Medicare/CMS",
-  "Mental health", "mental health; depression; anxiety; suicide; behavioral health; treatment", "psychiatric; psychological", "NSDUH; MH-CLD; CDC WONDER",
-  "Substance use", "opioid; substance use; alcohol; tobacco; drug; overdose; treatment admissions", "SUD; addiction", "NSDUH; TEDS; SC DPH; CDC WONDER",
-  "HIV/infectious disease", "HIV; hepatitis; STD; STI; TB; tuberculosis; PrEP; infectious disease", "viral; NCHHSTP", "CDC AtlasPlus; AIDSVu; AHEAD HIV Dashboard",
-  "Health care utilization/cost", "utilization; cost; expenditure; insurance; access; hospital; provider; payment; quality", "claims; MEPS; CMS; HCUP", "MEPS; CMS Data; ResDAC; HCUP",
-  "Claims/payment/provider", "claims; Medicare; Medicaid; provider; payment; enrollment; quality; beneficiaries", "payer; reimbursement", "CMS Data; ResDAC; SCDHHS; SC Health Data",
-  "EHR/clinical", "EHR; electronic health record; clinical; diagnosis; labs; medications; encounter; ICU; hospital", "EMR; patient-level", "N3C; MIMIC-IV; All of Us; Synthea",
-  "Genomics/molecular", "genomics; genotype; phenotype; molecular; transcriptomics; gene expression; biospecimen", "omics; sequencing; genetic", "dbGaP; GDC/TCGA; GEO; All of Us",
-  "Imaging", "imaging; MRI; CT; radiology; pathology; neuroimaging; cancer imaging", "image; DICOM; scan", "TCIA; ADNI; UK Biobank",
-  "Clinical trials", "trial; intervention; sponsor; outcomes; arms; eligibility; recruitment", "study registry; protocol", "ClinicalTrials.gov; BioLINCC",
-  "SDOH/geospatial", "poverty; income; education; housing; transportation; vulnerability; social determinants; census tract; neighborhood", "deprivation; social risk; SVI; ACS", "ACS; SVI; AHRQ SDOH; County Health Rankings",
-  "Environmental exposure", "air quality; heat; water; toxic release; hazardous waste; exposure; asthma; monitor; environment", "pollution; climate; EPA", "CDC Tracking; EPA Envirofacts; EPA AQS",
-  "Food/nutrition", "food access; food stores; nutrition; diet; SNAP; restaurants; local foods; food insecurity", "grocery; healthy food; USDA", "USDA Food Environment Atlas; NHANES",
-  "Rurality", "rural; urban; metro; nonmetro; county classification; RUCC; frontier", "rural-urban; geography", "USDA RUCC; ACS; County Health Rankings",
-  "South Carolina/local data", "South Carolina; SC; Midlands; county; state; DPH; DHEC; Medicaid; FQHC; hospitals", "local; regional", "SC DPH; SCANDHEC; SCDHHS; SC Health Data",
-  "Global health", "global; country; international; WHO; World Bank; OECD; GBD; mortality; burden", "worldwide; comparative", "WHO GHO; World Bank; IHME GBD; OECD",
-  "Synthetic/methods", "synthetic; simulation; methods; testing; EHR simulator; pipeline testing", "fake data; validation", "Synthea"
-)
-
-load_category_dictionary <- function(path) {
-  if (!file.exists(path)) return(fallback_category_dict)
-  out <- tryCatch({
-    readxl::read_excel(path, sheet = "Category_Keywords") |>
-      dplyr::rename_with(clean_names) |>
-      dplyr::mutate(dplyr::across(dplyr::everything(), as_text))
-  }, error = function(e) fallback_category_dict)
-  needed <- c("category", "core_keywords", "synonyms_related_terms", "example_sources")
-  for (nm in needed) if (!nm %in% names(out)) out[[nm]] <- ""
-  out[, needed]
-}
-
-infer_categories <- function(search_text, dict) {
-  dict <- dict |>
-    dplyr::mutate(term_string = paste(category, core_keywords, synonyms_related_terms, sep = "; "))
-  purrr::map_chr(search_text, function(txt) {
-    scores <- purrr::map_int(seq_len(nrow(dict)), function(i) {
-      terms <- split_terms(dict$term_string[i])
-      sum(stringr::str_detect(txt, stringr::fixed(terms, ignore_case = TRUE)))
-    })
-    hits <- dict$category[scores > 0]
-    paste(head(hits, 4), collapse = "; ")
-  })
 }
 
 #7/9 improvement
@@ -287,13 +219,6 @@ score_concepts <- function(query_text, source_text, rules = concept_rules) {
 }
 
 #added for 7/9 fix to improve scoring
-infer_query_categories <- function(terms, dict) {
-  if (length(terms) == 0) return(character())
-
-  query_text <- paste(terms, collapse = " ")
-  infer_categories(query_text, dict) |>
-    split_terms()
-}
 
 load_catalog <- function(path) {
   if (!file.exists(path)) {
@@ -324,7 +249,7 @@ load_catalog <- function(path) {
   raw[, needed]
 }
 
-prepare_catalog <- function(df, dict) {
+prepare_catalog <- function(df) {
   df <- df |>
     dplyr::mutate(
       access_level_standardized = dplyr::if_else(
@@ -333,25 +258,32 @@ prepare_catalog <- function(df, dict) {
         raw_access_level
       ),
       search_text = tolower(paste(
-  data_source,
-  official_link_text,
-  main_data_type_use,
-  access_level_standardized,
-  primary_category,
-  secondary_categories_tags,
-  keywords_for_search,
-  data_type_standardized,
-  topic_area_s,
-  population,
-  geography_coverage,
-  geographic_unit,
-  unit_of_analysis,
-  common_variables_measures,
-  sep = " "
-)),
-      inferred_category = infer_categories(search_text, dict),
-      category_for_filter = dplyr::if_else(nchar(primary_category) > 0, primary_category, inferred_category),
-      data_type_for_filter = dplyr::if_else(nchar(data_type_standardized) > 0, data_type_standardized, infer_data_type(search_text)),
+        data_source,
+        official_link_text,
+        main_data_type_use,
+        access_level_standardized,
+        primary_category,
+        secondary_categories_tags,
+        keywords_for_search,
+        data_type_standardized,
+        topic_area_s,
+        population,
+        geography_coverage,
+        geographic_unit,
+        unit_of_analysis,
+        common_variables_measures,
+        sep = " "
+      )),
+      category_for_filter = dplyr::if_else(
+        nchar(primary_category) > 0,
+        primary_category,
+        ""
+      ),
+      data_type_for_filter = dplyr::if_else(
+        nchar(data_type_standardized) > 0,
+        data_type_standardized,
+        infer_data_type(search_text)
+      ),
       access_burden_for_filter = standardize_access_burden(access_level_standardized, access_burden),
       official_url = dplyr::if_else(nchar(official_url) > 0, official_url, NA_character_)
     )
@@ -384,29 +316,12 @@ cancer_focus_boost <- function(df, terms, query_categories) {
   boost
 }
 
-score_catalog <- function(df, terms, query_categories, category_filter, data_type_filter, geography_filter, access_filter, open_only) {
+score_catalog <- function(df, terms, category_filter, data_type_filter, geography_filter, access_filter, open_only) {
   if (nrow(df) == 0) return(df)
 
-  # term_hits <- count_term_hits(df$search_text, terms)
-  # max_hit_denominator <- max(1, min(8, length(terms)))
-  #keyword_score <- pmin(30, round(30 * term_hits / max_hit_denominator, 1))
-  # keyword_score <- pmin(35, 35 * term_hits / max_hit_denominator)
-  
   term_hits <- count_term_hits(df$search_text, terms)
-max_hit_denominator <- max(1, min(8, length(terms)))
-keyword_score <- pmin(15, round(15 * term_hits / max_hit_denominator, 1))
-
-query_text <- paste(terms, collapse = " ")
-concept_scores <- purrr::map(df$search_text, ~ score_concepts(query_text, .x))
-concept_boost <- purrr::map_dbl(concept_scores, "boost")
-concept_penalty <- purrr::map_dbl(concept_scores, "penalty")
-  
-  #7/9 addition
-  query_category_score <- if (length(query_categories) == 0) {
-  rep(0, nrow(df))
-} else {
-  ifelse(contains_any(df$category_for_filter, query_categories), 25, 0)
-}
+  max_hit_denominator <- max(1, min(8, length(terms)))
+  keyword_score <- pmin(15, round(15 * term_hits / max_hit_denominator, 1))
 
   category_score <- if (length(category_filter) == 0) {
     rep(0, nrow(df))
@@ -434,49 +349,34 @@ concept_penalty <- purrr::map_dbl(concept_scores, "penalty")
 
   linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 10,
                           ifelse(tolower(df$linkage_potential) == "medium", 5, 0))
-  
-  focus_boost <- cancer_focus_boost(df, terms, query_categories)
-  #demo_score <- ifelse(tolower(df$demo_include) %in% c("yes", "candidate"), 5, 0)
 
-  # out <- df |>
-  #   dplyr::mutate(
-  #     keyword_hits = term_hits,
-  #     matched_terms = purrr::map_chr(search_text, matched_terms, terms = terms),
-  #     match_score = round(pmin(100, keyword_score + category_score + data_type_score + geography_score + access_score + linkage_score), 1),
-  #     why_matched = paste0("Category: ", category_for_filter, ". Access: ", access_level_standardized, ".")
-  #   )
-  
   matched_terms_text <- purrr::map_chr(df$search_text, ~ find_matched_terms(.x, terms))
-  
-  raw_score <- keyword_score + query_category_score + category_score + data_type_score +
-  geography_score + access_score + linkage_score + focus_boost - concept_penalty
+  raw_score <- keyword_score + category_score + data_type_score + geography_score + access_score + linkage_score
 
-out <- df |>
-  dplyr::mutate(
-    keyword_hits = term_hits,
-    matched_terms = matched_terms_text,
-    # match_score = round(
-    #   pmin(100, keyword_score + category_score + data_type_score + geography_score + access_score + linkage_score),
-    #   1
-    # ),
+  out <- df |>
+    dplyr::mutate(
+      keyword_hits = term_hits,
+      matched_terms = matched_terms_text,
+      match_score = round(raw_score, 1),
+      why_matched = paste0(
+        "Matched terms: ", matched_terms_text,
+        ". Category: ", category_for_filter,
+        ". Access: ", access_level_standardized,
+        "."
+      )
+    )
 
-match_score = round(raw_score, 1),
-
-    why_matched = paste0(
-  "Matched terms: ", matched_terms_text,
-  ". Category: ", category_for_filter,
-  ". Access: ", access_level_standardized,
-  ". Concept score applied: ", concept_scores,
-  "."
-)
-  )
-
-max_score <- max(out$match_score, na.rm = TRUE)
-out$match_score <- round(100 * out$match_score / max_score, 1)
+  max_score <- max(out$match_score, na.rm = TRUE)
+  if (is.finite(max_score) && max_score > 0) {
+    out$match_score <- round(100 * out$match_score / max_score, 1)
+  } else {
+    out$match_score <- 0
+  }
 
   if (length(access_filter) > 0) {
     out <- out |> dplyr::filter(contains_any(access_level_standardized, access_filter))
   }
+
   if (isTRUE(open_only)) {
     out <- out |>
       dplyr::filter(
@@ -497,7 +397,30 @@ make_html_link <- function(label, url) {
   )
 }
 
-DEFAULT_CATEGORIES <- fallback_category_dict$category
+DEFAULT_CATEGORIES <- c(
+  "Chronic disease",
+  "Cancer",
+  "Aging",
+  "Maternal/child health",
+  "Mental health",
+  "Substance use",
+  "HIV/infectious disease",
+  "Health care utilization/cost",
+  "Claims/payment/provider",
+  "EHR/clinical",
+  "Genomics/molecular",
+  "Imaging",
+  "Clinical trials",
+  "SDOH/geospatial",
+  "Environmental exposure",
+  "Food/nutrition",
+  "Rurality",
+  "South Carolina/local data",
+  "Global health",
+  "Synthetic/methods",
+  "Other"
+)
+
 DEFAULT_DATA_TYPES <- c(
   "Survey", "Registry/surveillance", "Claims/payment", "EHR/clinical", "Cohort/longitudinal",
   "Geospatial/area-level", "Environmental", "Genomics/molecular", "Imaging", "Physiologic signals",
@@ -721,12 +644,6 @@ div(
         value = ""
       ),
 
-      checkboxInput(
-        "use_category_expansion",
-        "Expand search using category keyword dictionary",
-        TRUE
-      ),
-
       tags$hr(),
 
       h5("Filters"),
@@ -873,16 +790,12 @@ current_path <- reactive({
   }
 })
 
-category_dict <- reactive({
-  load_category_dictionary(current_path())
-})
-
 raw_catalog <- reactive({
   load_catalog(current_path())
 })
 
 processed_catalog <- reactive({
-  prepare_catalog(raw_catalog(), category_dict())
+  prepare_catalog(raw_catalog())
 })
 
 observe({
@@ -901,94 +814,20 @@ observe({
   updateSelectizeInput(session, "access_filter", choices = access_choices, server = TRUE)
 })
 
-## Removing the demo button
 
-# observeEvent(input$demo_diabetes, {
-#   updateTextAreaInput(
-#     session,
-#     "question",
-#     value = "Diabetes outcomes in rural South Carolina communities with interest in social vulnerability, food access, and health care access."
-#   )
-#   updateTextInput(
-#     session,
-#     "keyword_string",
-#     value = "diabetes; rural; South Carolina; social vulnerability; food access; Medicaid"
-#   )
-#   updateSelectizeInput(
-#     session,
-#     "category_filter",
-#     selected = c("Chronic disease", "SDOH/geospatial", "Rurality", "South Carolina/local data")
-#   )
-#   updateSelectizeInput(
-#     session,
-#     "geography_filter",
-#     selected = c("South Carolina", "County-level", "Census tract", "ZIP/ZCTA")
-#   )
-# })
-
-# search_terms <- reactive({
-#   terms <- unique(c(extract_words(input$question), split_terms(input$keyword_string)))
-#   if (isTRUE(input$use_category_expansion) && length(input$category_filter) > 0) {
-#     dict_terms <- category_dict() |>
-#       dplyr::filter(category %in% input$category_filter) |>
-#       dplyr::transmute(all_terms = paste(category, core_keywords, synonyms_related_terms, sep = "; ")) |>
-#       dplyr::pull(all_terms) |>
-#       split_terms()
-#     terms <- unique(c(terms, dict_terms))
-#   }
-#   terms[nchar(terms) >= 3]
-# })
 
 search_terms <- reactive({
-  base_terms <- unique(c(
+  unique(c(
     extract_words(input$question),
     split_terms(input$keyword_string)
-  ))
-
-  base_terms <- base_terms[nchar(base_terms) >= 3]
-
-  terms <- base_terms
-
-  # Always expand the actual words the user typed.
-  if (isTRUE(input$use_category_expansion)) {
-    terms <- unique(c(
-      terms,
-      expand_terms_with_dictionary(base_terms, category_dict())
-    ))
-
-    # Also expand selected categories, if any were chosen.
-    if (length(input$category_filter) > 0) {
-      dict_terms <- category_dict() |>
-        dplyr::filter(category %in% input$category_filter) |>
-        dplyr::transmute(all_terms = paste(category, core_keywords, synonyms_related_terms, sep = "; ")) |>
-        dplyr::pull(all_terms) |>
-        split_terms()
-
-      terms <- unique(c(terms, dict_terms))
-    }
-  }
-
-  terms[nchar(terms) >= 3]
+  )) |>
+    (\(x) x[nchar(x) >= 3])()
 })
-
-# scored_results <- reactive({
-#   score_catalog(
-#     df = processed_catalog(),
-#     terms = search_terms(),
-#     category_filter = input$category_filter %||% character(),
-#     data_type_filter = input$data_type_filter %||% character(),
-#     geography_filter = input$geography_filter %||% character(),
-#     access_filter = input$access_filter %||% character(),
-#     open_only = input$open_only
-#   ) |>
-#     dplyr::filter(match_score >= input$min_score)
-# })
 
 scored_results <- reactive({
   score_catalog(
     df = processed_catalog(),
     terms = search_terms(),
-    query_categories = infer_query_categories(search_terms(), category_dict()),
     category_filter = input$category_filter %||% character(),
     data_type_filter = input$data_type_filter %||% character(),
     geography_filter = input$geography_filter %||% character(),
@@ -997,7 +836,6 @@ scored_results <- reactive({
   ) |>
     dplyr::filter(match_score >= input$min_score)
 })
-
 output$result_summary <- renderUI({
   df <- scored_results()
   tagList(
@@ -1017,17 +855,14 @@ output$results_table <- DT::renderDT({
       link = make_html_link(official_link_text, official_url)
     ) |>
     dplyr::select(
-      Rank,
-      `Data Source` = data_source,
-      `Match Score` = match_score,
-      `Access` = access_level_standardized,
-      `Access Burden` = access_burden_for_filter,
-      `Category` = category_for_filter,
-      `Data Type` = data_type_for_filter,
-      `Geography` = geography_coverage,
-      `Why Matched` = why_matched,
-      `Official Link` = link
-    )
+  Rank,
+  `Data Source` = data_source,
+  `Match Score` = match_score,
+  `Access` = access_level_standardized,
+  `Category` = category_for_filter,
+  `Data Type` = data_type_for_filter,
+  `Official Link` = link
+)
 
   DT::datatable(
     df,
@@ -1159,7 +994,6 @@ output$methods_text <- renderUI({
     "<ol>",
     "<li>The app loads the Data_Prep sheet from the Excel template.</li>",
     "<li>It builds searchable text from source name, narrative, access level, categories, keywords, notes, and other metadata fields.</li>",
-    "<li>If manual categories are blank, it infers likely categories using the Category_Keywords dictionary.</li>",
     "<li>It calculates a transparent match score using keyword hits, category fit, data type fit, geography fit, access burden, linkage potential, and demo priority.</li>",
     "<li>It displays ranked results, cards, comparison views, visual summaries, and a downloadable data-fit summary.</li>",
     "</ol>",
