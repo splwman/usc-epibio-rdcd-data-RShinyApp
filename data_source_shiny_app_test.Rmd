@@ -6,14 +6,13 @@ output:
   html_document:
     toc: true
     toc_depth: 3
-    theme: readable
 runtime: shiny
 ---
 ## 3. Setup
 
 ```{r setup, include=FALSE}
 required_pkgs <- c(
-  "shiny", "readxl", "dplyr", "tidyr", "stringr", "purrr",
+  "shiny", "bslib", "readxl", "dplyr", "tidyr", "stringr", "purrr",
   "DT", "ggplot2", "glue", "tibble", "tools"
 )
 
@@ -236,15 +235,16 @@ load_catalog <- function(path) {
     dplyr::rename_with(clean_names) |>
     dplyr::mutate(dplyr::across(dplyr::everything(), as_text))
 
-  needed <- c(
-    "record_id", "data_source", "official_link_text", "official_url", "main_data_type_use", "raw_access_level",
-    "access_level_standardized", "access_burden", "primary_category", "secondary_categories_tags",
-    "keywords_for_search", "data_type_standardized", "topic_area_s", "population", "geography_coverage",
-    "geographic_unit", "unit_of_analysis", "individual_level_data", "area_level_data", "longitudinal",
-    "years_available", "refresh_frequency", "linkage_potential", "south_carolina_relevance",
-    "common_variables_measures", "suggested_use_cases", "companion_datasets", "limitations_cautions",
-    "data_governance_notes", "rdcd_consultation_notes", "demo_include", "priority", "status"
-  )
+ needed <- c(
+  "record_id", "data_source", "official_link_text", "official_url", "main_data_type_use", "raw_access_level",
+  "access_level_standardized", "access_burden", "primary_category", "secondary_categories_tags",
+  "keywords_for_search", "data_type_standardized", "topic_area_s", "population", "geography_coverage",
+  "geographic_unit", "unit_of_analysis", "individual_level_data", "area_level_data", "longitudinal",
+  "years_available", "refresh_frequency", "linkage_potential", "south_carolina_relevance",
+  "common_variables_measures", "suggested_use_cases", "companion_datasets", "limitations_cautions",
+  "data_governance_notes", "rdcd_consultation_notes", "demo_include", "priority", "status",
+  "app_search_text"
+)
   for (nm in needed) if (!nm %in% names(raw)) raw[[nm]] <- ""
   raw[, needed]
 }
@@ -257,21 +257,39 @@ prepare_catalog <- function(df) {
         access_level_standardized,
         raw_access_level
       ),
-      search_text = tolower(paste(
-        data_source,
-        official_link_text,
-        main_data_type_use,
-        access_level_standardized,
+     search_text = tolower(paste(
+  data_source,
+  official_link_text,
+  main_data_type_use,
+  raw_access_level,
+  access_level_standardized,
+  primary_category,
+  secondary_categories_tags,
+  keywords_for_search,
+  data_type_standardized,
+  topic_area_s,
+  population,
+  geography_coverage,
+  geographic_unit,
+  unit_of_analysis,
+  common_variables_measures,
+  suggested_use_cases,
+  companion_datasets,
+  limitations_cautions,
+  data_governance_notes,
+  rdcd_consultation_notes,
+  app_search_text,
+  sep = " "
+)),
+      concept_text = tolower(paste(
         primary_category,
         secondary_categories_tags,
         keywords_for_search,
-        data_type_standardized,
-        topic_area_s,
-        population,
-        geography_coverage,
-        geographic_unit,
-        unit_of_analysis,
         common_variables_measures,
+        suggested_use_cases,
+        companion_datasets,
+        limitations_cautions,
+        rdcd_consultation_notes,
         sep = " "
       )),
       category_for_filter = dplyr::if_else(
@@ -290,38 +308,23 @@ prepare_catalog <- function(df) {
   df
 }
 
-#7/9 fixes
-cancer_focus_boost <- function(df, terms, query_categories) {
-  query_text <- tolower(paste(c(terms, query_categories), collapse = " "))
-  cancer_mode <- stringr::str_detect(
-    query_text,
-    "cancer|oncology|tumor|malignancy|neoplasm|seer|tcga|tcia"
-  )
 
-  if (!isTRUE(cancer_mode)) return(rep(0, nrow(df)))
-
-  source_text <- tolower(paste(
-    df$data_source,
-    df$primary_category,
-    df$secondary_categories_tags,
-    df$keywords_for_search,
-    df$main_data_type_use,
-    sep = " "
-  ))
-
-  boost <- ifelse(stringr::str_detect(source_text, "\\bseer\\b"), 30, 0) +
-    ifelse(stringr::str_detect(source_text, "tcga|tcia"), 18, 0) +
-    ifelse(stringr::str_detect(source_text, "cancer|oncology|tumor|malignancy|neoplasm"), 12, 0)
-
-  boost
-}
 
 score_catalog <- function(df, terms, category_filter, data_type_filter, geography_filter, access_filter, open_only) {
   if (nrow(df) == 0) return(df)
 
+  query_text <- tolower(paste(terms, collapse = " "))
+
   term_hits <- count_term_hits(df$search_text, terms)
-  max_hit_denominator <- max(1, min(8, length(terms)))
-  keyword_score <- pmin(15, round(15 * term_hits / max_hit_denominator, 1))
+  max_hit_denominator <- max(1, min(10, length(terms)))
+  keyword_score <- pmin(40, round(40 * term_hits / max_hit_denominator, 1))
+
+  concept_score <- purrr::map_dbl(df$concept_text, function(src) {
+    fit <- score_concepts(query_text, src)
+    fit$boost - fit$penalty
+  })
+  concept_score <- pmax(0, concept_score)
+  concept_hit <- concept_score > 0
 
   category_score <- if (length(category_filter) == 0) {
     rep(0, nrow(df))
@@ -335,7 +338,13 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
     ifelse(contains_any(df$data_type_for_filter, data_type_filter), 15, 0)
   }
 
-  geography_text <- tolower(paste(df$geography_coverage, df$geographic_unit, df$main_data_type_use, df$data_source, sep = " "))
+  geography_text <- tolower(paste(
+    df$geography_coverage,
+    df$geographic_unit,
+    df$main_data_type_use,
+    df$data_source,
+    sep = " "
+  ))
   geography_terms <- geography_filter_terms(geography_filter)
   geography_score <- if (length(geography_filter) == 0) {
     rep(0, nrow(df))
@@ -343,35 +352,33 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
     ifelse(contains_any(geography_text, geography_terms), 15, 0)
   }
 
-  access_score <- ifelse(df$access_burden_for_filter == "Low", 10,
-                         ifelse(df$access_burden_for_filter == "Medium", 6,
-                                ifelse(df$access_burden_for_filter == "High", 2, 0)))
+  access_score <- ifelse(df$access_burden_for_filter == "Low", 3,
+                         ifelse(df$access_burden_for_filter == "Medium", 2,
+                                ifelse(df$access_burden_for_filter == "High", 1, 0)))
 
-  linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 10,
-                          ifelse(tolower(df$linkage_potential) == "medium", 5, 0))
+  linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 3,
+                          ifelse(tolower(df$linkage_potential) == "medium", 2, 0))
 
   matched_terms_text <- purrr::map_chr(df$search_text, ~ find_matched_terms(.x, terms))
-  raw_score <- keyword_score + category_score + data_type_score + geography_score + access_score + linkage_score
+
+  raw_score <- keyword_score + concept_score + category_score + data_type_score +
+  geography_score + access_score + linkage_score
 
   out <- df |>
     dplyr::mutate(
       keyword_hits = term_hits,
+      concept_score = round(concept_score, 1),
+      concept_hit = concept_hit,
       matched_terms = matched_terms_text,
-      match_score = round(raw_score, 1),
+      match_score = round(pmax(0, pmin(100, raw_score)), 1),
       why_matched = paste0(
         "Matched terms: ", matched_terms_text,
+        ". Concept fit: ", round(concept_score, 1),
         ". Category: ", category_for_filter,
         ". Access: ", access_level_standardized,
         "."
       )
     )
-
-  max_score <- max(out$match_score, na.rm = TRUE)
-  if (is.finite(max_score) && max_score > 0) {
-    out$match_score <- round(100 * out$match_score / max_score, 1)
-  } else {
-    out$match_score <- 0
-  }
 
   if (length(access_filter) > 0) {
     out <- out |> dplyr::filter(contains_any(access_level_standardized, access_filter))
@@ -488,290 +495,568 @@ geography_filter_terms <- function(filters) {
 
 ```{r ui, echo=FALSE}
 
-tags$head(
-  tags$style(HTML("
-    .data-card {
-      border: 1px solid #D6E2EA;
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 12px;
-      background: #FFFFFF;
-    }
+theme <- bs_theme(
+  version = 5,
+  primary = "#73000A",
+  secondary = "#9E1B32",
+  bg = "#F7F7F7",
+  fg = "#333333"
+)
 
-    .data-card h4 {
-      margin-top: 0;
-    }
+fluidPage(
+  theme = theme,
 
-    .small-note {
-      font-size: 90%;
-      color: #555;
-    }
+  tags$head(
+   tags$style(HTML("
+  :root {
+    --bs-primary: #73000A;
+    --bs-secondary: #9E1B32;
+    --bs-link-color: #73000A;
+    --bs-link-hover-color: #5B0008;
+  }
 
-    .metric {
-      font-weight: 700;
-    }
-    
-    .rdcd-app .shiny-input-container {
+  .rdcd-app {
+    background: #F7F7F7;
+    color: #333333;
+  }
+
+  .rdcd-header {
+    background: linear-gradient(135deg, #73000A 0%, #5B0008 100%);
+    color: #FFFFFF;
+    padding: 22px 28px;
+    margin: 0 0 18px 0;
+    border-radius: 0 0 18px 18px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  }
+
+  .rdcd-header h1 {
+    margin: 0;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .rdcd-header .subtitle {
+    margin-top: 6px;
+    font-size: 15px;
+    font-weight: 500;
+    opacity: 0.92;
+  }
+
+  .rdcd-app .shiny-input-container {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
-    }
-
-    .shiny-input-container {
-      margin-bottom: 10px;
-    }
-
-    .form-group {
-      margin-bottom: 10px;
-    }
-
-    .selectize-input {
-      min-height: 34px;
-    }
-
-    /* Equal-height layout */
-
-    .rdcd-app .row {
-      display: flex;
-      align-items: stretch;
-    }
-
-    .rdcd-app .sidebarPanel,
-    .rdcd-app .mainPanel {
-      float: none !important;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .rdcd-app .sidebarPanel {
-      background: #F8FAFC;
-      border-right: 1px solid #D6E2EA;
-      padding-right: 15px;
-      min-height: 100%;
-    }
-
-    .rdcd-app .mainPanel {
-      min-width: 0;
-      padding-left: 20px;
-    }
-    
-    .rdcd-app .sidebarPanel,
-    .rdcd-app .mainPanel {
-     min-height: calc(100vh - 120px);
-    }
-
-    .rdcd-app .well {
-      background: transparent;
-      border: none;
-      box-shadow: none;
-      padding: 0;
-      margin-bottom: 0;
-    }
-  ")),
-  tags$script(HTML("
-  function syncRdcdPanelHeights() {
-    var left = document.querySelector('.rdcd-app .sidebarPanel');
-    var right = document.querySelector('.rdcd-app .mainPanel');
-    if (!left || !right) return;
-
-    left.style.height = 'auto';
-    right.style.height = 'auto';
-
-    var h = Math.max(left.offsetHeight, right.offsetHeight);
-    left.style.height = h + 'px';
-    right.style.height = h + 'px';
   }
 
-  $(document).on('shiny:recalculated', syncRdcdPanelHeights);
-  $(window).on('resize', syncRdcdPanelHeights);
-  $(document).on('shiny:connected', syncRdcdPanelHeights);
-"))
-)
+  .shiny-input-container {
+    margin-bottom: 10px;
+  }
 
+  .form-group {
+    margin-bottom: 10px;
+  }
 
+  .selectize-input {
+    min-height: 34px;
+  }
 
+  .data-card {
+    border: 1px solid #D9D9D6;
+    border-left: 5px solid #73000A;
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+    background: #FFFFFF;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  }
 
-div(
-  class = "rdcd-app",
+  .data-card h4 {
+    margin-top: 0;
+    font-weight: 700;
+    color: #73000A;
+  }
 
-  sidebarLayout(
+  .small-note {
+    font-size: 90%;
+    color: #666666;
+  }
 
-    sidebarPanel(
-      width = 4,
+  .metric {
+    font-weight: 700;
+    color: #73000A;
+  }
 
-      h4("Search Inputs"),
+  .rdcd-app .row {
+    display: flex;
+    align-items: stretch;
+  }
 
-      fileInput(
-        "catalog_file",
-        "Workbook",
-        accept = c(".xlsx")
-      ),
+  .rdcd-app .sidebarPanel,
+  .rdcd-app .mainPanel {
+    float: none !important;
+    display: flex;
+    flex-direction: column;
+  }
 
-      p(
-        class = "small-note",
-        "Upload a completed RDCD Data Source Preparation workbook or use the default workbook."
-      ),
+  .rdcd-app .sidebarPanel {
+    background: linear-gradient(180deg, #FAF5F5 0%, #F4ECEC 100%);
+    border-right: 1px solid #D9D9D6;
+    padding-right: 15px;
+    min-height: 100%;
+  }
 
-      tags$hr(),
+  .rdcd-app .mainPanel {
+    min-width: 0;
+    padding-left: 20px;
+  }
 
-      h5("Research Question"),
+  .rdcd-app .sidebarPanel,
+  .rdcd-app .mainPanel {
+    min-height: calc(100vh - 190px);
+  }
 
-    shiny::tagAppendAttributes(
-  textAreaInput(
-    "question",
-    NULL,
-    value = "",
-    rows = 4,
-    width = "100%"
+  .rdcd-app .well {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin-bottom: 0;
+  }
+
+  /* Tabs */
+  .rdcd-app .nav-tabs > li > a,
+  .rdcd-app .nav-tabs .nav-link {
+    color: #73000A !important;
+    font-weight: 600;
+    border-radius: 10px 10px 0 0;
+  }
+
+  .rdcd-app .nav-tabs > li.active > a,
+  .rdcd-app .nav-tabs > li.active > a:hover,
+  .rdcd-app .nav-tabs > li.active > a:focus,
+  .rdcd-app .nav-tabs .nav-link.active,
+  .rdcd-app .nav-tabs .nav-item.show .nav-link {
+    color: #FFFFFF !important;
+    background-color: #73000A !important;
+    border-color: #73000A !important;
+  }
+
+  /* General links */
+  .rdcd-app a,
+  .rdcd-app a:visited {
+    color: #73000A !important;
+  }
+
+  .rdcd-app a:hover,
+  .rdcd-app a:focus {
+    color: #5B0008 !important;
+  }
+
+  .rdcd-app .nav-link:hover,
+  .rdcd-app .nav-link:focus,
+  .rdcd-app .page-link:hover,
+  .rdcd-app .page-link:focus {
+    color: #5B0008 !important;
+  }
+
+  /* DataTables / pagination */
+  .dataTables_wrapper .dataTables_paginate .paginate_button,
+  .dataTables_wrapper .dataTables_paginate .paginate_button.previous,
+  .dataTables_wrapper .dataTables_paginate .paginate_button.next,
+  .dt-paging-button,
+  .dt-paging-button.previous,
+  .dt-paging-button.next,
+  .page-link {
+    color: #73000A !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+  }
+
+  .dataTables_wrapper .dataTables_paginate .paginate_button:hover,
+  .dataTables_wrapper .dataTables_paginate .paginate_button.current,
+  .dt-paging-button:hover,
+  .dt-paging-button.current,
+  .page-item.active .page-link {
+    color: #FFFFFF !important;
+    background: #73000A !important;
+    border-color: #73000A !important;
+  }
+
+  .dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+  .dt-paging-button.disabled,
+  .page-item.disabled .page-link {
+    color: #9CA3AF !important;
+  }
+
+  .dataTables_wrapper .dataTables_length select {
+    border-color: #73000A;
+  }
+
+  .dataTables_wrapper .dataTables_filter input {
+    border-color: #73000A;
+  }
+
+  .tab-content {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-top: none;
+    border-radius: 0 12px 12px 12px;
+    padding: 18px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  }
+
+  .btn-primary {
+    background-color: #73000A !important;
+    border-color: #73000A !important;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  .btn-primary:hover,
+  .btn-primary:focus,
+  .btn-primary:active {
+    background-color: #5B0008 !important;
+    border-color: #5B0008 !important;
+  }
+
+  .form-control,
+  .selectize-input {
+    border-radius: 10px !important;
+    border-color: #CBD5E1 !important;
+  }
+
+  .selectize-dropdown .active {
+    background-color: #73000A !important;
+    color: white !important;
+  }
+  
+  .fit-summary-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fit-summary-hero {
+  background: linear-gradient(135deg, #73000A 0%, #5B0008 100%);
+  color: #FFFFFF;
+  border-radius: 18px;
+  padding: 22px 24px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.10);
+}
+
+.fit-summary-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.9;
+  margin-bottom: 6px;
+}
+
+.fit-summary-hero h3 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.fit-summary-lead {
+  margin: 0;
+  font-size: 15px;
+  opacity: 0.95;
+  max-width: 860px;
+}
+
+.fit-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.fit-summary-card {
+  background: #FFFFFF;
+  border: 1px solid #D9D9D6;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.fit-summary-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #73000A;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.fit-summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1F2937;
+  line-height: 1.4;
+}
+
+.fit-summary-callout {
+  background: #FFFFFF;
+  border-left: 5px solid #73000A;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.fit-summary-callout p {
+  margin: 0;
+  color: #333333;
+  line-height: 1.55;
+}
+
+.fit-summary-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .fit-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fit-summary-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #333333;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+")),
+    tags$script(HTML("
+      function syncRdcdPanelHeights() {
+        var left = document.querySelector('.rdcd-app .sidebarPanel');
+        var right = document.querySelector('.rdcd-app .mainPanel');
+        if (!left || !right) return;
+
+        left.style.height = 'auto';
+        right.style.height = 'auto';
+
+        var h = Math.max(left.offsetHeight, right.offsetHeight);
+        left.style.height = h + 'px';
+        right.style.height = h + 'px';
+      }
+
+      $(document).on('shiny:recalculated', syncRdcdPanelHeights);
+      $(window).on('resize', syncRdcdPanelHeights);
+      $(document).on('shiny:connected', syncRdcdPanelHeights);
+    "))
   ),
-  style = paste(
-    "resize: none !important;",
-    "width: 100% !important;",
-    "max-width: 100% !important;",
-    "min-width: 0 !important;",
-    "height: 120px !important;",
-    "min-height: 120px !important;",
-    "max-height: 120px !important;",
-    "overflow-y: auto !important;",
-    "overflow-x: hidden !important;",
-    "box-sizing: border-box !important;"
-  )
-),
 
-      textInput(
-        "keyword_string",
-        "Keywords",
-        value = ""
-      ),
+  div(
+    class = "rdcd-app",
 
-      tags$hr(),
-
-      h5("Filters"),
-
-      selectizeInput(
-        "category_filter",
-        "Category",
-        choices = DEFAULT_CATEGORIES,
-        multiple = TRUE,
-        options = list(
-          placeholder = "Select categories"
-        )
-      ),
-
-      selectizeInput(
-        "data_type_filter",
-        "Data Type",
-        choices = DEFAULT_DATA_TYPES,
-        multiple = TRUE,
-        options = list(
-          placeholder = "Select data types"
-        )
-      ),
-
-      selectizeInput(
-        "geography_filter",
-        "Geography",
-        choices = DEFAULT_GEO,
-        multiple = TRUE,
-        options = list(
-          placeholder = "Select geography"
-        )
-      ),
-
-      selectizeInput(
-        "access_filter",
-        "Access Level",
-        choices = DEFAULT_ACCESS,
-        multiple = TRUE,
-        options = list(
-          placeholder = "Select access levels"
-        )
-      ),
-
-      checkboxInput(
-        "open_only",
-        "Show only open/public or low-burden sources",
-        FALSE
-      ),
-
-      sliderInput(
-        "min_score",
-        "Minimum Match Score",
-        min = 0,
-        max = 100,
-        value = 15,
-        step = 5
-      ),
-
-      numericInput(
-        "top_n",
-        "Number of Results",
-        value = 10,
-        min = 5,
-        max = 50,
-        step = 5
-      ),
-
-      tags$hr(),
-
-      h5("Export"),
-
-      downloadButton(
-        "download_results",
-        "Download Results"
-      )
-
+    div(
+      class = "rdcd-header",
+      h1("RDCD Public Data Discovery Navigator"),
+      div(class = "subtitle", "University of South Carolina • Research Design & Data Coordination Core")
     ),
 
-    mainPanel(
-      width = 8,
+    sidebarLayout(
 
-      tabsetPanel(
+      sidebarPanel(
+        width = 4,
 
-        tabPanel(
-          "Top Matches",
-          br(),
-          uiOutput("result_summary"),
-          DT::DTOutput("results_table")
+        h4("Search Inputs"),
+
+        fileInput(
+          "catalog_file",
+          "Workbook",
+          accept = c(".xlsx")
         ),
 
-        tabPanel(
-          "Data Source Cards",
-          br(),
-          uiOutput("source_cards")
+        p(
+          class = "small-note",
+          "Upload a completed RDCD Data Source Preparation workbook or use the default workbook."
         ),
 
-        tabPanel(
-          "Compare Sources",
-          br(),
-          uiOutput("compare_picker"),
-          DT::DTOutput("compare_table")
-        ),
+        tags$hr(),
 
-        tabPanel(
-          "Visual Summary",
-          br(),
-          plotOutput("score_plot", height = "420px"),
-          plotOutput("category_plot", height = "420px")
-        ),
+        h5("Research Question"),
 
-        tabPanel(
-          "Data Fit Summary",
-          br(),
-          verbatimTextOutput("fit_summary"),
-          br(),
-          downloadButton(
-            "download_summary",
-            "Download Summary Text"
+        shiny::tagAppendAttributes(
+          textAreaInput(
+            "question",
+            NULL,
+            value = "",
+            rows = 4,
+            width = "100%"
+          ),
+          style = paste(
+            "resize: none !important;",
+            "width: 100% !important;",
+            "max-width: 100% !important;",
+            "min-width: 0 !important;",
+            "height: 120px !important;",
+            "min-height: 120px !important;",
+            "max-height: 120px !important;",
+            "overflow-y: auto !important;",
+            "overflow-x: hidden !important;",
+            "box-sizing: border-box !important;"
           )
         ),
 
-        tabPanel(
-          "Methods",
-          br(),
-          htmlOutput("methods_text")
-        )
+        textInput(
+          "keyword_string",
+          "Keywords",
+          value = ""
+        ),
 
+        checkboxInput(
+          "use_category_expansion",
+          "Expand search using category keyword dictionary",
+          TRUE
+        ),
+
+        tags$hr(),
+
+        h5("Filters"),
+
+        selectizeInput(
+          "category_filter",
+          "Category",
+          choices = DEFAULT_CATEGORIES,
+          multiple = TRUE,
+          options = list(
+            placeholder = "Select categories"
+          )
+        ),
+
+        selectizeInput(
+          "data_type_filter",
+          "Data Type",
+          choices = DEFAULT_DATA_TYPES,
+          multiple = TRUE,
+          options = list(
+            placeholder = "Select data types"
+          )
+        ),
+
+        selectizeInput(
+          "geography_filter",
+          "Geography",
+          choices = DEFAULT_GEO,
+          multiple = TRUE,
+          options = list(
+            placeholder = "Select geography"
+          )
+        ),
+
+        selectizeInput(
+          "access_filter",
+          "Access Level",
+          choices = DEFAULT_ACCESS,
+          multiple = TRUE,
+          options = list(
+            placeholder = "Select access levels"
+          )
+        ),
+
+        checkboxInput(
+          "open_only",
+          "Show only open/public or low-burden sources",
+          FALSE
+        ),
+
+        sliderInput(
+          "min_score",
+          "Minimum Match Score",
+          min = 0,
+          max = 100,
+          value = 15,
+          step = 5
+        ),
+
+        numericInput(
+          "top_n",
+          "Number of Results",
+          value = 10,
+          min = 5,
+          max = 50,
+          step = 5
+        ),
+
+        tags$hr(),
+
+        h5("Export"),
+
+        downloadButton(
+          "download_results",
+          "Download Results"
+        )
+      ),
+
+      mainPanel(
+        width = 8,
+
+        tabsetPanel(
+
+          tabPanel(
+            "Top Matches",
+            br(),
+            uiOutput("result_summary"),
+            DT::DTOutput("results_table")
+          ),
+
+          tabPanel(
+            "Data Source Cards",
+            br(),
+            uiOutput("source_cards")
+          ),
+
+          tabPanel(
+            "Compare Sources",
+            br(),
+            uiOutput("compare_picker"),
+            DT::DTOutput("compare_table")
+          ),
+
+          tabPanel(
+            "Visual Summary",
+            br(),
+            plotOutput("score_plot", height = "420px"),
+            plotOutput("category_plot", height = "420px")
+          ),
+
+         tabPanel(
+  "Data Fit Summary",
+  br(),
+
+  div(
+    class = "fit-summary-shell",
+
+    div(
+      class = "fit-summary-hero",
+      div(class = "fit-summary-kicker", "AI-assisted recommendation"),
+      h3("Data Fit Recommendation"),
+      p(
+        class = "fit-summary-lead",
+        "A concise summary of the best-fit source(s), access path, and next RDCD step."
+      )
+    ),
+
+    uiOutput("fit_summary"),
+
+    div(
+      class = "fit-summary-actions",
+      downloadButton("download_summary", "Download Summary")
+    )
+  )
+)
+        )
       )
     )
   )
@@ -984,22 +1269,31 @@ data_fit_summary <- reactive({
   )
 })
 
-output$fit_summary <- renderText({
-  data_fit_summary()
-})
+output$fit_summary <- renderUI({
+  txt <- data_fit_summary()
 
-output$methods_text <- renderUI({
-  HTML(paste0(
-    "<h4>How the MVP works</h4>",
-    "<ol>",
-    "<li>The app loads the Data_Prep sheet from the Excel template.</li>",
-    "<li>It builds searchable text from source name, narrative, access level, categories, keywords, notes, and other metadata fields.</li>",
-    "<li>It calculates a transparent match score using keyword hits, category fit, data type fit, geography fit, access burden, linkage potential, and demo priority.</li>",
-    "<li>It displays ranked results, cards, comparison views, visual summaries, and a downloadable data-fit summary.</li>",
-    "</ol>",
-    "<h4>Recommended AI enhancement after MVP</h4>",
-    "<p>Add AI-assisted keyword expansion and semantic matching only after the curated metadata fields are stable. The app should not send sensitive project details or restricted data to an external model without institutional approval.</p>"
-  ))
+  if (is.null(txt) || !nzchar(txt)) {
+    return(div(class = "fit-summary-callout", p("No summary available yet.")))
+  }
+
+  div(
+    class = "fit-summary-shell",
+
+    div(
+      class = "fit-summary-hero",
+      div(class = "fit-summary-kicker", "AI-assisted recommendation"),
+      h3("Data Fit Recommendation"),
+      p(
+        class = "fit-summary-lead",
+        "A concise summary of the best-fit source(s), access path, and next RDCD step."
+      )
+    ),
+
+    div(
+      class = "fit-summary-callout",
+      tags$pre(class = "fit-summary-pre", txt)
+    )
+  )
 })
 
 output$download_results <- downloadHandler(

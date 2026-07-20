@@ -25,11 +25,12 @@ Maternal mortality is a phrase I've been looking at a lot. If you just type in m
 
 ## Data fit summary section
 
-- this section just looks bad and needs to be fixed up
+- this section just looks bad and needs to be fixed up [in progress 7/20]
 
 ## Methods section
 
 - Not sure this section is necessary. I think it can be taken out. Any information on how to use it will be available through github
+[completed 7/20, github info still needed]
 
 ## Future Ideas
 
