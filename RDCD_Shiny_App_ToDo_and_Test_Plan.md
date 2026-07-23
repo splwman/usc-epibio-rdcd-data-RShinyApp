@@ -1,105 +1,107 @@
 # RDCD Public Data Discovery Navigator: To-Do List and Feasibility Test Plan
 
+Elaina, Robert, Emma:
+
+Welcome! This document is where we will keep track of both short- and long-term goals 
+as well as keep track of what is being done and by who. Just as a short introduction to
+the project, there are 5 documents to keep track of:
+
+*  **RDCD_Shiny_App_ToDo_and_Test_Plan.md** - That would be this document! The start will be
+a list of short-term improvements or a to-do list that can be worked on in the current draft
+of the app. Feel free to make suggestions or comments on any of them. If you are currently
+working on one or have completed one please include the information with you initials such
+as [in progress 7/23, SP] or [completed 7/24, SP].
+* **RDCD_Data_Source_Preparation_Template.xlsx** - This is the excel sheet the app reads from.
+Feel free to add data sources or information to existing ones. Nick and I have reviewed each one,
+but we could really use another pair of eyes checking over what we have so far. If you have suggestions
+for improving the excel, please let us know or create a branch and try it out.
+*  **Data Sources Test Table.docx** - This is a table I have been using to test the search functionality 
+which is in dire need of some help. If you make some changes to the search/scoring/matching parts and
+need some ideas on how to test it, this is a good place.
+*  **README.md** - We have not started working on this yet, but it will include the same kind of information
+you see on other README's. We should probably start with a description of the app, what it is used for, and 
+how to access it.
+*  **RDCD_Data_Source_Navigator_Shiny_App_main.Rmd** - This is the most important document as it is where we
+are building the app. Please try to document what code chunks are doing and what changes are being made. I 
+will try to go through and create some comments that can hopefully give you an idea of what is going on so far.
+If you want to try something a little crazy, go for it! just maybe break it off on a branch first.
+
+It's great to have you on the team! Thank you so much for your help! If you have any questions, don't hesitate
+to reach out. Try to remember to pull each time you open the app and push before you leave to make sure we are 
+all working on the most up-to-date version. Other than that, good luck and have fun!
+
+- Sydney
+
 ## A. Step-by-step to-do list
 
-### Phase 1: Scope and data preparation
+## Search Function/Scoring/Matching:
+I've been working on trying to improve the matching for the search function, but it still has a long way to go.
+Currently I've been working a lot with "cancer" which does not bring up cancer sources such as SEER. I tried 
+creating a cancer boost function, but that made those cancer sources pop up in unrelated searches such as 
+"maternal mortality".
 
-1. Confirm the first audience and use case.
-   - Recommended first use: RDCD internal consultation triage and retreat demo.
-   - Later use: investigator-facing searchable data navigator.
+## Top matches Section
+I think Access Burden, match score, Geogrpaphy, and Why Matched can be taken and put into a "more information"
+section that Jiajia mentioned. Eventually I think match score will also be taken out, but for the purposes of
+assessing and fixing its functionality, I think we should keep it in for now. [completed 7/10, SP]
 
-2. Define the MVP research scenario.
-   - Recommended demo: diabetes, rurality, South Carolina, SDOH, and food access.
-   - Backup demos: cancer/genomics/imaging; opioid/substance use and mental health; health care cost/utilization.
+## Compare Sources Section
+I think limitations should be under "more information" somewhere else. It is inflating the size of the output
+too much. Should we consider changing the orientation of the table?
 
-3. Complete the minimum metadata fields for 10-15 priority data sources.
-   - Access Level Standardized
-   - Access Burden
-   - Primary Category
-   - Secondary Categories / Tags
-   - Keywords for Search
-   - Data Type Standardized
-   - Geography Coverage
-   - Geographic Unit
-   - Unit of Analysis
-   - Linkage Potential
-   - South Carolina Relevance
-   - Suggested Use Cases
-   - Companion Datasets
-   - Limitations / Cautions
-   - Data Governance Notes
+## Visual Summary Section
+Is this section necessary? This might work well under the compare sources section.
 
-4. Review and finalize the category dictionary.
-   - Confirm categories match RDCD language.
-   - Add synonyms that investigators are likely to type.
-   - Keep category names stable before building public-facing materials.
+## Data fit summary section
+This section just needs help. It does not look polished and clean.
 
-5. Verify official URLs and access labels.
-   - Confirm that open/public sources are truly open.
-   - Flag registered, credentialed, controlled, restricted, purchased, or DUA-required sources.
-   - Avoid implying that restricted data are immediately downloadable.
+## Methods section
+I don't think this section is necessary and should be taken out. Any information on how the app functions and how
+to use it will be available on GitHub. [methods section deleted 7/20, SP]
 
-### Phase 2: Build Shiny MVP
 
-6. Place the Excel workbook and Rmd file in the same project folder.
+## Future Directions
 
-7. Install required R packages.
-   - shiny
-   - readxl
-   - dplyr
-   - tidyr
-   - stringr
-   - purrr
-   - DT
-   - ggplot2
-   - glue
-   - tibble
+### GitHub Page
+We could have an "Upload your own Workbook" section in GitHub that explains how to upload and use your own
+workbook. We would provide links to 2 copies of the workbook: (1) the default workbook we use that can be 
+edited/added to for their own work and (2) a blank workbook with all teh necessary sections so they can start
+from scratch.
 
-8. Run the prototype.
-   - In RStudio, open `RDCD_Data_Source_Navigator_Shiny_App.Rmd`.
-   - Click Run Document, or run: `rmarkdown::run("RDCD_Data_Source_Navigator_Shiny_App.Rmd")`.
+### Improve search quality
 
-9. Test keyword search and filters.
-   - Confirm that the diabetes/SC demo returns CDC PLACES, SVI, ACS, USDA Food Environment Atlas, RUCC, County Health Rankings, SC DPH, SCDHHS, and SC Health Data when relevant metadata are completed.
-
-10. Review the data-fit summary.
-    - Confirm it is useful as a first-page consultation summary.
-    - Confirm it includes access level and limitations language.
-
-### Phase 3: Improve search quality
-
-11. Adjust the scoring weights.
+1. Adjust the scoring weights.
     - Increase category/geography weight if the app returns broad but irrelevant national datasets.
     - Increase keyword weight if the app returns too many category-level matches.
 
-12. Expand the keyword dictionary.
+2. Expand the keyword dictionary.
     - Add disease synonyms.
     - Add common abbreviations: CVD, SDOH, SVI, RUCC, EHR, claims, Medicaid, Medicare.
     - Add South Carolina-specific terms: SC, Midlands, Prisma, DPH, DHEC, SCDHHS, FQHC.
 
-13. Add manual boost fields only if needed.
+3. Add manual boost fields only if needed.
     - Example: `Demo Include`, `Priority`, `SC Relevance`, and `Linkage Potential`.
     - Keep manual boosts transparent.
 
-### Phase 4: Add AI/visualization layer
+### Add AI/visualization layer
 
-14. Add AI-assisted keyword expansion only after the rule-based MVP is stable.
+1. Add AI-assisted keyword expansion only after the rule-based MVP is stable.
     - Example: heart disease -> cardiovascular disease, CVD, coronary disease, stroke, hypertension.
     - Example: neighborhood disadvantage -> SDOH, deprivation, social vulnerability, ACS, SVI.
 
-15. Add plain-language explanations.
+2. Add plain-language explanations.
     - Explain why each data source matched.
     - Explain what the source can and cannot support.
     - Explain access burden and governance requirements.
 
-16. Add stronger visualizations.
+3. Add stronger visualizations.
     - Match score plot.
     - Access burden distribution.
     - Category distribution.
     - Data source comparison matrix.
     - Research question to data pathway diagram.
 
-17. Prepare retreat materials.
+4. Prepare retreat materials.
     - One-slide app concept.
     - One-slide demo screenshot.
     - Two-minute demo script.
@@ -107,23 +109,7 @@
 
 ## B. Feasibility test plan
 
-### Test 1: Data import
-
-**Question:** Does the app load the Excel template correctly?
-
-**Method:** Run the app with the Excel workbook in the same folder. Confirm the number of records loaded.
-
-**Acceptance criterion:** All 58 source rows from the Word file appear in the app after import.
-
-### Test 2: Metadata completeness
-
-**Question:** Are the minimum fields completed for the initial demo sources?
-
-**Method:** Filter the Excel sheet to demo priority rows and check required fields.
-
-**Acceptance criterion:** At least 10 priority sources have category, keywords, data type, geography, access burden, linkage potential, and SC relevance completed.
-
-### Test 3: Keyword search relevance
+### Test 1: Keyword search relevance
 
 **Question:** Does the search return expected sources for the diabetes/SC demo?
 
@@ -133,7 +119,7 @@
 
 **Acceptance criterion:** At least 6 of the expected sources appear in the top 10 results after metadata curation.
 
-### Test 4: Filter behavior
+### Test 2: Filter behavior
 
 **Question:** Do filters narrow results logically?
 
@@ -141,7 +127,7 @@
 
 **Acceptance criterion:** Results decrease in a sensible way, and expected high-fit sources are not lost due to inconsistent metadata labels.
 
-### Test 5: Access-level safety
+### Test 3: Access-level safety
 
 **Question:** Does the app clearly distinguish open from restricted data?
 
@@ -149,7 +135,7 @@
 
 **Acceptance criterion:** Restricted or controlled sources remain clearly labeled and are not described as immediately available public data.
 
-### Test 6: Ranking quality
+### Test 4: Ranking quality
 
 **Question:** Are high-fit sources ranked above weak-fit sources?
 
@@ -157,7 +143,7 @@
 
 **Acceptance criterion:** At least 80 percent of top 10 results are judged relevant for each demo scenario.
 
-### Test 7: Explanation quality
+### Test 5: Explanation quality
 
 **Question:** Does the app explain why a source matched?
 
@@ -165,7 +151,7 @@
 
 **Acceptance criterion:** The explanation references true matched terms, categories, access levels, or data type fields.
 
-### Test 8: Usability
+### Test 6: Usability
 
 **Question:** Can a new user complete a search without coaching?
 
@@ -173,7 +159,7 @@
 
 **Acceptance criterion:** Users can complete a search, interpret results, and identify 2-3 candidate sources in less than 2 minutes.
 
-### Test 9: Export
+### Test 7: Export
 
 **Question:** Do download buttons work?
 
@@ -181,21 +167,3 @@
 
 **Acceptance criterion:** Files open successfully and contain the current search results and summary.
 
-### Test 10: Demo readiness
-
-**Question:** Can the retreat demo run reliably?
-
-**Method:** Run the app from a clean R session, test the demo button, and save screenshots.
-
-**Acceptance criterion:** The app runs without error, screenshots are available as backup, and a two-minute demo script is prepared.
-
-## C. Go/no-go criteria for first demonstration
-
-The app is ready for a leadership demonstration when:
-
-1. The Excel workbook loads without errors.
-2. At least 10 high-priority sources are fully curated.
-3. The diabetes/SC demo returns expected sources.
-4. Access burden labels are clear.
-5. The data-fit summary is understandable to a non-technical audience.
-6. Static screenshots are ready in case live demo fails.

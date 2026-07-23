@@ -1349,42 +1349,6 @@ output$download_summary <- downloadHandler(
 )
 ```
 
-## 6. Development notes
-
-### Minimum metadata needed for the first demo
-
-For the first demo, complete the following fields for 10-15 high-priority data sources:
-
-1. Access Level Standardized
-2. Access Burden
-3. Primary Category
-4. Secondary Categories / Tags
-5. Keywords for Search
-6. Data Type Standardized
-7. Geography Coverage
-8. Geographic Unit
-9. Unit of Analysis
-10. Linkage Potential
-11. South Carolina Relevance
-12. Suggested Use Cases
-13. Companion Datasets
-14. Limitations / Cautions
-15. Data Governance Notes
-
-### Suggested first demo sources to curate
-
-For a South Carolina diabetes and SDOH demo, prioritize these rows:
-
-- CDC PLACES
-- CDC/ATSDR Social Vulnerability Index - SVI
-- U.S. Census American Community Survey - ACS
-- County Health Rankings and Roadmaps
-- AHRQ SDOH Database
-- USDA Food Environment Atlas
-- USDA Rural-Urban Continuum Codes
-- South Carolina DPH Public Health Data
-- SCDHHS Reports and Statistics
-- SC Health Data
 
 ### AI/visualization phase after MVP
 
