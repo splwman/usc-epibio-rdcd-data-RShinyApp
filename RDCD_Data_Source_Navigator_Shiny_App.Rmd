@@ -1,0 +1,747 @@
+---
+title: "RDCD Public Data Discovery Navigator"
+author: "RDCD Core"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: readable
+runtime: shiny
+---
+
+## 1. Purpose
+
+This R Markdown file is a runnable Shiny prototype for an RDCD data source discovery tool. The app helps investigators move from a broad research idea to a ranked shortlist of public, registered, credentialed, or controlled data sources.
+
+The prototype is designed to use the Excel workbook `RDCD_Data_Source_Preparation_Template.xlsx`. The minimum viable product uses transparent logic: keyword screening, curated categories, filters, and a simple weighted scoring model. A later version can add an AI-assisted layer for keyword expansion, semantic matching, and plain-language explanations.
+
+## 2. Demo concept
+
+Example demo question:
+
+> Diabetes outcomes in rural South Carolina communities, with interest in social vulnerability, food access, and health care access.
+
+Example user inputs:
+
+- Research question: free-text paragraph
+- Keywords: diabetes; rural; South Carolina; social vulnerability; food access; Medicaid
+- Filters: category, data type, geography, access level, open-only toggle
+
+Expected output:
+
+- Ranked data source table
+- Data source cards with fit rationale
+- Match score plot
+- Access burden and category summaries
+- Exportable data-fit summary for RDCD consultation
+
+## 3. Setup
+
+```{r setup, include=FALSE}
+required_pkgs <- c(
+  "shiny", "readxl", "dplyr", "tidyr", "stringr", "purrr",
+  "DT", "ggplot2", "glue", "tibble", "tools"
+)
+
+missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  stop(
+    "Please install required packages before running this app: ",
+    paste(missing_pkgs, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+lapply(required_pkgs, library, character.only = TRUE)
+options(shiny.maxRequestSize = 30 * 1024^2)
+
+DEFAULT_WORKBOOK <- "RDCD_Data_Source_Preparation_Template.xlsx"
+
+`%||%` <- function(x, y) {
+  if (is.null(x) || length(x) == 0) y else x
+}
+
+clean_names <- function(x) {
+  x |>
+    stringr::str_replace_all("[^A-Za-z0-9]+", "_") |>
+    stringr::str_replace_all("_+$", "") |>
+    stringr::str_replace_all("^_+", "") |>
+    tolower()
+}
+
+as_text <- function(x) {
+  x <- ifelse(is.na(x), "", as.character(x))
+  stringr::str_squish(x)
+}
+
+split_terms <- function(x) {
+  if (is.null(x) || length(x) == 0) return(character())
+  x <- paste(x, collapse = " ")
+  terms <- stringr::str_split(tolower(x), "[,;\\n\\r]+|\\s+and\\s+|\\s+or\\s+")[[1]]
+  terms <- stringr::str_squish(terms)
+  terms <- terms[nchar(terms) >= 3]
+  unique(terms)
+}
+
+extract_words <- function(x) {
+  if (is.null(x) || length(x) == 0) return(character())
+  stop_words <- c(
+    "the", "and", "for", "with", "from", "this", "that", "into", "data", "source",
+    "sources", "study", "research", "health", "using", "want", "need", "look", "about",
+    "interest", "interested", "outcome", "outcomes"
+  )
+  words <- stringr::str_split(tolower(paste(x, collapse = " ")), "[^a-z0-9]+")[[1]]
+  words <- words[nchar(words) >= 3]
+  unique(words[!words %in% stop_words])
+}
+
+contains_any <- function(text, terms) {
+  if (length(terms) == 0) return(rep(FALSE, length(text)))
+  purrr::map_lgl(text, function(txt) {
+    any(stringr::str_detect(txt, stringr::fixed(terms, ignore_case = TRUE)))
+  })
+}
+
+count_term_hits <- function(text, terms) {
+  if (length(terms) == 0) return(rep(0, length(text)))
+  purrr::map_int(text, function(txt) {
+    sum(stringr::str_detect(txt, stringr::fixed(terms, ignore_case = TRUE)))
+  })
+}
+
+matched_terms <- function(text, terms, max_terms = 12) {
+  if (length(terms) == 0) return("")
+  hits <- terms[stringr::str_detect(text, stringr::fixed(terms, ignore_case = TRUE))]
+  paste(head(unique(hits), max_terms), collapse = "; ")
+}
+
+safe_col <- function(df, nm, default = "") {
+  if (nm %in% names(df)) as_text(df[[nm]]) else rep(default, nrow(df))
+}
+
+standardize_access_burden <- function(access_level, access_burden) {
+  existing <- as_text(access_burden)
+  access <- tolower(as_text(access_level))
+  inferred <- dplyr::case_when(
+    stringr::str_detect(access, "open/public") & !stringr::str_detect(access, "restricted|controlled|credentialed|purchased") ~ "Low",
+    stringr::str_detect(access, "registered public-use|public-use plus restricted|registered/controlled|open plus credentialed|open plus controlled|terms") ~ "Medium",
+    stringr::str_detect(access, "controlled|restricted|credentialed|purchased") ~ "High",
+    TRUE ~ "Unknown"
+  )
+  ifelse(nchar(existing) > 0, existing, inferred)
+}
+
+infer_data_type <- function(text) {
+  dplyr::case_when(
+    stringr::str_detect(text, "survey|surveys|questionnaire|household|behavioral risk") ~ "Survey",
+    stringr::str_detect(text, "registry|surveillance|incidence|mortality|prevalence|vital statistics") ~ "Registry/surveillance",
+    stringr::str_detect(text, "claims|medicare|medicaid|payment|cost|expenditure|insurance|provider|enrollment") ~ "Claims/payment",
+    stringr::str_detect(text, "ehr|electronic health record|clinical|hospital|icu|encounter|diagnosis|laboratory|medication") ~ "EHR/clinical",
+    stringr::str_detect(text, "cohort|longitudinal|follow-up|retirement|aging") ~ "Cohort/longitudinal",
+    stringr::str_detect(text, "county|tract|zip|zcta|geographic|geospatial|census|vulnerability|rural") ~ "Geospatial/area-level",
+    stringr::str_detect(text, "environment|air quality|water|hazardous|toxic|exposure|heat") ~ "Environmental",
+    stringr::str_detect(text, "genom|genotype|phenotype|gene expression|molecular|transcriptomics|biospecimen") ~ "Genomics/molecular",
+    stringr::str_detect(text, "imaging|radiology|pathology|mri|ct|dicom") ~ "Imaging",
+    stringr::str_detect(text, "physiologic|ecg|waveform") ~ "Physiologic signals",
+    stringr::str_detect(text, "clinical trial|trial registry|intervention|sponsor") ~ "Trial registry",
+    stringr::str_detect(text, "synthetic") ~ "Synthetic data",
+    TRUE ~ "Other"
+  )
+}
+
+fallback_category_dict <- tibble::tribble(
+  ~category, ~core_keywords, ~synonyms_related_terms, ~example_sources,
+  "Chronic disease", "diabetes; obesity; hypertension; cardiovascular; asthma; COPD; chronic disease; prevention", "heart disease; CVD; cardiometabolic", "NHANES; BRFSS; CDC PLACES; CDC WONDER",
+  "Cancer", "cancer; tumor; oncology; incidence; survival; mortality; staging; treatment", "malignancy; neoplasm; SEER; TCGA", "SEER; GDC/TCGA; TCIA; CDC WONDER",
+  "Aging", "aging; retirement; cognition; disability; frailty; older adults; long-term care", "elderly; geriatric", "HRS; WHI; Medicare/CMS",
+  "Mental health", "mental health; depression; anxiety; suicide; behavioral health; treatment", "psychiatric; psychological", "NSDUH; MH-CLD; CDC WONDER",
+  "Substance use", "opioid; substance use; alcohol; tobacco; drug; overdose; treatment admissions", "SUD; addiction", "NSDUH; TEDS; SC DPH; CDC WONDER",
+  "HIV/infectious disease", "HIV; hepatitis; STD; STI; TB; tuberculosis; PrEP; infectious disease", "viral; NCHHSTP", "CDC AtlasPlus; AIDSVu; AHEAD HIV Dashboard",
+  "Health care utilization/cost", "utilization; cost; expenditure; insurance; access; hospital; provider; payment; quality", "claims; MEPS; CMS; HCUP", "MEPS; CMS Data; ResDAC; HCUP",
+  "Claims/payment/provider", "claims; Medicare; Medicaid; provider; payment; enrollment; quality; beneficiaries", "payer; reimbursement", "CMS Data; ResDAC; SCDHHS; SC Health Data",
+  "EHR/clinical", "EHR; electronic health record; clinical; diagnosis; labs; medications; encounter; ICU; hospital", "EMR; patient-level", "N3C; MIMIC-IV; All of Us; Synthea",
+  "Genomics/molecular", "genomics; genotype; phenotype; molecular; transcriptomics; gene expression; biospecimen", "omics; sequencing; genetic", "dbGaP; GDC/TCGA; GEO; All of Us",
+  "Imaging", "imaging; MRI; CT; radiology; pathology; neuroimaging; cancer imaging", "image; DICOM; scan", "TCIA; ADNI; UK Biobank",
+  "Clinical trials", "trial; intervention; sponsor; outcomes; arms; eligibility; recruitment", "study registry; protocol", "ClinicalTrials.gov; BioLINCC",
+  "SDOH/geospatial", "poverty; income; education; housing; transportation; vulnerability; social determinants; census tract; neighborhood", "deprivation; social risk; SVI; ACS", "ACS; SVI; AHRQ SDOH; County Health Rankings",
+  "Environmental exposure", "air quality; heat; water; toxic release; hazardous waste; exposure; asthma; monitor; environment", "pollution; climate; EPA", "CDC Tracking; EPA Envirofacts; EPA AQS",
+  "Food/nutrition", "food access; food stores; nutrition; diet; SNAP; restaurants; local foods; food insecurity", "grocery; healthy food; USDA", "USDA Food Environment Atlas; NHANES",
+  "Rurality", "rural; urban; metro; nonmetro; county classification; RUCC; frontier", "rural-urban; geography", "USDA RUCC; ACS; County Health Rankings",
+  "South Carolina/local data", "South Carolina; SC; Midlands; county; state; DPH; DHEC; Medicaid; FQHC; hospitals", "local; regional", "SC DPH; SCANDHEC; SCDHHS; SC Health Data",
+  "Global health", "global; country; international; WHO; World Bank; OECD; GBD; mortality; burden", "worldwide; comparative", "WHO GHO; World Bank; IHME GBD; OECD",
+  "Synthetic/methods", "synthetic; simulation; methods; testing; EHR simulator; pipeline testing", "fake data; validation", "Synthea"
+)
+
+load_category_dictionary <- function(path) {
+  if (!file.exists(path)) return(fallback_category_dict)
+  out <- tryCatch({
+    readxl::read_excel(path, sheet = "Category_Keywords") |>
+      dplyr::rename_with(clean_names) |>
+      dplyr::mutate(dplyr::across(dplyr::everything(), as_text))
+  }, error = function(e) fallback_category_dict)
+  needed <- c("category", "core_keywords", "synonyms_related_terms", "example_sources")
+  for (nm in needed) if (!nm %in% names(out)) out[[nm]] <- ""
+  out[, needed]
+}
+
+infer_categories <- function(search_text, dict) {
+  dict <- dict |>
+    dplyr::mutate(term_string = paste(category, core_keywords, synonyms_related_terms, sep = "; "))
+  purrr::map_chr(search_text, function(txt) {
+    scores <- purrr::map_int(seq_len(nrow(dict)), function(i) {
+      terms <- split_terms(dict$term_string[i])
+      sum(stringr::str_detect(txt, stringr::fixed(terms, ignore_case = TRUE)))
+    })
+    hits <- dict$category[scores > 0]
+    paste(head(hits, 4), collapse = "; ")
+  })
+}
+
+load_catalog <- function(path) {
+  if (!file.exists(path)) {
+    return(tibble::tribble(
+      ~record_id, ~data_source, ~official_link_text, ~official_url, ~main_data_type_use, ~raw_access_level,
+      "DS-017", "CDC PLACES", "PLACES Data Portal", "https://www.cdc.gov/places/", "County, city, census tract, and ZIP-level chronic disease and health behavior estimates", "Open/public",
+      "DS-018", "CDC/ATSDR Social Vulnerability Index - SVI", "SVI Data Download", "https://www.atsdr.cdc.gov/place-health/php/svi/", "County and census tract social vulnerability measures", "Open/public",
+      "DS-019", "U.S. Census American Community Survey - ACS", "ACS API", "https://www.census.gov/programs-surveys/acs/data/data-via-api.html", "Demographic, socioeconomic, housing, insurance, education, employment variables", "Open/public",
+      "DS-047", "USDA Food Environment Atlas", "USDA Food Environment Atlas", "https://www.ers.usda.gov/data-products/food-environment-atlas", "County food access, food stores, restaurants, assistance programs, local foods", "Open/public",
+      "DS-053", "South Carolina DPH Public Health Data", "SC DPH Public Health Data", "https://dph.sc.gov/professionals/public-health-data", "South Carolina public health dashboards, reports, BRFSS, cancer registry, HIV/STD, overdose, vital statistics resources", "Open/public plus restricted components"
+    ))
+  }
+
+  raw <- readxl::read_excel(path, sheet = "Data_Prep") |>
+    dplyr::rename_with(clean_names) |>
+    dplyr::mutate(dplyr::across(dplyr::everything(), as_text))
+
+  needed <- c(
+    "record_id", "data_source", "official_link_text", "official_url", "main_data_type_use", "raw_access_level",
+    "access_level_standardized", "access_burden", "primary_category", "secondary_categories_tags",
+    "keywords_for_search", "data_type_standardized", "topic_area_s", "population", "geography_coverage",
+    "geographic_unit", "unit_of_analysis", "individual_level_data", "area_level_data", "longitudinal",
+    "years_available", "refresh_frequency", "linkage_potential", "south_carolina_relevance",
+    "common_variables_measures", "suggested_use_cases", "companion_datasets", "limitations_cautions",
+    "data_governance_notes", "rdcd_consultation_notes", "demo_include", "priority", "status"
+  )
+  for (nm in needed) if (!nm %in% names(raw)) raw[[nm]] <- ""
+  raw[, needed]
+}
+
+prepare_catalog <- function(df, dict) {
+  df <- df |>
+    dplyr::mutate(
+      access_level_standardized = dplyr::if_else(
+        nchar(access_level_standardized) > 0,
+        access_level_standardized,
+        raw_access_level
+      ),
+      search_text = tolower(paste(
+        data_source, official_link_text, main_data_type_use, raw_access_level,
+        access_level_standardized, primary_category, secondary_categories_tags,
+        keywords_for_search, data_type_standardized, topic_area_s, population,
+        geography_coverage, geographic_unit, unit_of_analysis, common_variables_measures,
+        suggested_use_cases, companion_datasets, limitations_cautions,
+        data_governance_notes, rdcd_consultation_notes,
+        sep = " "
+      )),
+      inferred_category = infer_categories(search_text, dict),
+      category_for_filter = dplyr::if_else(nchar(primary_category) > 0, primary_category, inferred_category),
+      data_type_for_filter = dplyr::if_else(nchar(data_type_standardized) > 0, data_type_standardized, infer_data_type(search_text)),
+      access_burden_for_filter = standardize_access_burden(access_level_standardized, access_burden),
+      official_url = dplyr::if_else(nchar(official_url) > 0, official_url, NA_character_)
+    )
+  df
+}
+
+score_catalog <- function(df, terms, category_filter, data_type_filter, geography_filter, access_filter, open_only) {
+  if (nrow(df) == 0) return(df)
+
+  term_hits <- count_term_hits(df$search_text, terms)
+  max_hit_denominator <- max(1, min(8, length(terms)))
+  keyword_score <- pmin(30, 30 * term_hits / max_hit_denominator)
+
+  category_score <- if (length(category_filter) == 0) {
+    rep(0, nrow(df))
+  } else {
+    ifelse(contains_any(df$category_for_filter, category_filter), 20, 0)
+  }
+
+  data_type_score <- if (length(data_type_filter) == 0) {
+    rep(0, nrow(df))
+  } else {
+    ifelse(contains_any(df$data_type_for_filter, data_type_filter), 15, 0)
+  }
+
+  geography_text <- tolower(paste(df$geography_coverage, df$geographic_unit, df$main_data_type_use, df$data_source, sep = " "))
+  geography_score <- if (length(geography_filter) == 0) {
+    rep(0, nrow(df))
+  } else {
+    ifelse(contains_any(geography_text, geography_filter), 15, 0)
+  }
+
+  access_score <- ifelse(df$access_burden_for_filter == "Low", 10,
+                         ifelse(df$access_burden_for_filter == "Medium", 6,
+                                ifelse(df$access_burden_for_filter == "High", 2, 0)))
+
+  linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 5,
+                          ifelse(tolower(df$linkage_potential) == "medium", 3, 0))
+  demo_score <- ifelse(tolower(df$demo_include) %in% c("yes", "candidate"), 5, 0)
+
+  out <- df |>
+    dplyr::mutate(
+      keyword_hits = term_hits,
+      matched_terms = purrr::map_chr(search_text, matched_terms, terms = terms),
+      match_score = round(pmin(100, keyword_score + category_score + data_type_score + geography_score + access_score + linkage_score + demo_score), 1),
+      why_matched = dplyr::case_when(
+        nchar(matched_terms) > 0 ~ paste0("Matched terms: ", matched_terms, ". Category: ", category_for_filter, ". Access: ", access_level_standardized, "."),
+        TRUE ~ paste0("Category: ", category_for_filter, ". Access: ", access_level_standardized, ".")
+      )
+    )
+
+  if (length(access_filter) > 0) {
+    out <- out |> dplyr::filter(contains_any(access_level_standardized, access_filter))
+  }
+  if (isTRUE(open_only)) {
+    out <- out |>
+      dplyr::filter(
+        access_burden_for_filter == "Low" |
+          stringr::str_detect(tolower(access_level_standardized), "open|public")
+      )
+  }
+
+  out |>
+    dplyr::arrange(dplyr::desc(match_score), dplyr::desc(keyword_hits), data_source)
+}
+
+make_html_link <- function(label, url) {
+  ifelse(
+    is.na(url) | nchar(url) == 0,
+    label,
+    sprintf('<a href="%s" target="_blank">%s</a>', url, label)
+  )
+}
+
+DEFAULT_CATEGORIES <- fallback_category_dict$category
+DEFAULT_DATA_TYPES <- c(
+  "Survey", "Registry/surveillance", "Claims/payment", "EHR/clinical", "Cohort/longitudinal",
+  "Geospatial/area-level", "Environmental", "Genomics/molecular", "Imaging", "Physiologic signals",
+  "Trial registry", "Synthetic data", "Reports/dashboard", "Other"
+)
+DEFAULT_GEO <- c("United States", "South Carolina", "Global/international", "State-level", "County-level", "Census tract", "ZIP/ZCTA", "City", "Hospital/provider")
+DEFAULT_ACCESS <- c("Open/public", "Registered public-use", "Registered/controlled", "Credentialed access", "Controlled/restricted", "Public-use plus restricted files", "Open plus controlled data", "Open plus credentialed access", "Open/public with terms")
+```
+
+## 4. App interface
+
+```{r ui, echo=FALSE}
+tags$head(
+  tags$style(HTML("\n    .data-card {border: 1px solid #D6E2EA; border-radius: 8px; padding: 14px; margin-bottom: 12px; background: #FFFFFF;}\n    .data-card h4 {margin-top: 0;}\n    .small-note {font-size: 90%; color: #555;}\n    .metric {font-weight: 700;}\n  "))
+)
+
+sidebarLayout(
+  sidebarPanel(
+    width = 3,
+    h4("Search inputs"),
+    fileInput(
+      "catalog_file",
+      "Upload data preparation workbook",
+      accept = c(".xlsx")
+    ),
+    p(class = "small-note", "Leave blank to use RDCD_Data_Source_Preparation_Template.xlsx in the working directory, or the built-in demo rows if the workbook is unavailable."),
+    textAreaInput(
+      "question",
+      "Research question or concept",
+      value = "Diabetes outcomes in rural South Carolina communities with interest in social vulnerability, food access, and health care access.",
+      rows = 4
+    ),
+    textInput(
+      "keyword_string",
+      "Additional keywords, separated by commas or semicolons",
+      value = "diabetes; rural; South Carolina; social vulnerability; food access; Medicaid"
+    ),
+    checkboxInput("use_category_expansion", "Expand search using category keyword dictionary", TRUE),
+    selectizeInput("category_filter", "Category filters", choices = DEFAULT_CATEGORIES, multiple = TRUE),
+    selectizeInput("data_type_filter", "Data type filters", choices = DEFAULT_DATA_TYPES, multiple = TRUE),
+    selectizeInput("geography_filter", "Geography filters", choices = DEFAULT_GEO, multiple = TRUE),
+    selectizeInput("access_filter", "Access-level filters", choices = DEFAULT_ACCESS, multiple = TRUE),
+    checkboxInput("open_only", "Show only open/public or low-burden sources", FALSE),
+    sliderInput("min_score", "Minimum match score", min = 0, max = 100, value = 15, step = 5),
+    numericInput("top_n", "Number of top results to display", value = 10, min = 5, max = 50, step = 5),
+    actionButton("demo_diabetes", "Load diabetes/SC demo"),
+    br(), br(),
+    downloadButton("download_results", "Download current results")
+  ),
+  mainPanel(
+    width = 9,
+    tabsetPanel(
+      tabPanel(
+        "Top Matches",
+        br(),
+        uiOutput("result_summary"),
+        DT::DTOutput("results_table")
+      ),
+      tabPanel(
+        "Data Source Cards",
+        br(),
+        uiOutput("source_cards")
+      ),
+      tabPanel(
+        "Compare Sources",
+        br(),
+        uiOutput("compare_picker"),
+        DT::DTOutput("compare_table")
+      ),
+      tabPanel(
+        "Visual Summary",
+        br(),
+        plotOutput("score_plot", height = "420px"),
+        plotOutput("category_plot", height = "420px")
+      ),
+      tabPanel(
+        "Data Fit Summary",
+        br(),
+        verbatimTextOutput("fit_summary"),
+        br(),
+        downloadButton("download_summary", "Download summary text")
+      ),
+      tabPanel(
+        "Methods",
+        br(),
+        htmlOutput("methods_text")
+      )
+    )
+  )
+)
+```
+
+## 5. Server logic
+
+```{r server, context="server"}
+current_path <- reactive({
+  if (!is.null(input$catalog_file)) {
+    input$catalog_file$datapath
+  } else {
+    DEFAULT_WORKBOOK
+  }
+})
+
+category_dict <- reactive({
+  load_category_dictionary(current_path())
+})
+
+raw_catalog <- reactive({
+  load_catalog(current_path())
+})
+
+processed_catalog <- reactive({
+  prepare_catalog(raw_catalog(), category_dict())
+})
+
+observe({
+  df <- processed_catalog()
+  category_choices <- unique(c(DEFAULT_CATEGORIES, split_terms(df$category_for_filter)))
+  category_choices <- sort(category_choices[nchar(category_choices) > 0])
+  data_type_choices <- unique(c(DEFAULT_DATA_TYPES, df$data_type_for_filter))
+  data_type_choices <- sort(data_type_choices[nchar(data_type_choices) > 0])
+  geography_choices <- unique(c(DEFAULT_GEO, split_terms(paste(df$geography_coverage, df$geographic_unit))))
+  geography_choices <- sort(geography_choices[nchar(geography_choices) > 0])
+  access_choices <- unique(c(DEFAULT_ACCESS, df$access_level_standardized))
+  access_choices <- sort(access_choices[nchar(access_choices) > 0])
+
+  updateSelectizeInput(session, "category_filter", choices = category_choices, server = TRUE)
+  updateSelectizeInput(session, "data_type_filter", choices = data_type_choices, server = TRUE)
+  updateSelectizeInput(session, "geography_filter", choices = geography_choices, server = TRUE)
+  updateSelectizeInput(session, "access_filter", choices = access_choices, server = TRUE)
+})
+
+observeEvent(input$demo_diabetes, {
+  updateTextAreaInput(
+    session,
+    "question",
+    value = "Diabetes outcomes in rural South Carolina communities with interest in social vulnerability, food access, and health care access."
+  )
+  updateTextInput(
+    session,
+    "keyword_string",
+    value = "diabetes; rural; South Carolina; social vulnerability; food access; Medicaid"
+  )
+  updateSelectizeInput(
+    session,
+    "category_filter",
+    selected = c("Chronic disease", "SDOH/geospatial", "Rurality", "South Carolina/local data")
+  )
+  updateSelectizeInput(
+    session,
+    "geography_filter",
+    selected = c("South Carolina", "County-level", "Census tract", "ZIP/ZCTA")
+  )
+})
+
+search_terms <- reactive({
+  terms <- unique(c(extract_words(input$question), split_terms(input$keyword_string)))
+  if (isTRUE(input$use_category_expansion) && length(input$category_filter) > 0) {
+    dict_terms <- category_dict() |>
+      dplyr::filter(category %in% input$category_filter) |>
+      dplyr::transmute(all_terms = paste(category, core_keywords, synonyms_related_terms, sep = "; ")) |>
+      dplyr::pull(all_terms) |>
+      split_terms()
+    terms <- unique(c(terms, dict_terms))
+  }
+  terms[nchar(terms) >= 3]
+})
+
+scored_results <- reactive({
+  score_catalog(
+    df = processed_catalog(),
+    terms = search_terms(),
+    category_filter = input$category_filter %||% character(),
+    data_type_filter = input$data_type_filter %||% character(),
+    geography_filter = input$geography_filter %||% character(),
+    access_filter = input$access_filter %||% character(),
+    open_only = input$open_only
+  ) |>
+    dplyr::filter(match_score >= input$min_score)
+})
+
+output$result_summary <- renderUI({
+  df <- scored_results()
+  tagList(
+    tags$p(
+      tags$span(class = "metric", nrow(df)), " data sources meet the current criteria. ",
+      tags$span(class = "metric", length(search_terms())), " search terms used."
+    ),
+    tags$p(class = "small-note", paste("Search terms:", paste(search_terms(), collapse = ", ")))
+  )
+})
+
+output$results_table <- DT::renderDT({
+  df <- scored_results() |>
+    dplyr::slice_head(n = input$top_n) |>
+    dplyr::mutate(
+      Rank = dplyr::row_number(),
+      link = make_html_link(official_link_text, official_url)
+    ) |>
+    dplyr::select(
+      Rank,
+      `Data Source` = data_source,
+      `Match Score` = match_score,
+      `Access` = access_level_standardized,
+      `Access Burden` = access_burden_for_filter,
+      `Category` = category_for_filter,
+      `Data Type` = data_type_for_filter,
+      `Geography` = geography_coverage,
+      `Why Matched` = why_matched,
+      `Official Link` = link
+    )
+
+  DT::datatable(
+    df,
+    escape = FALSE,
+    rownames = FALSE,
+    filter = "top",
+    options = list(pageLength = 10, scrollX = TRUE, autoWidth = TRUE)
+  )
+})
+
+output$source_cards <- renderUI({
+  df <- scored_results() |> dplyr::slice_head(n = min(10, input$top_n))
+  if (nrow(df) == 0) return(tags$p("No data sources meet the current criteria."))
+
+  tagList(purrr::map(seq_len(nrow(df)), function(i) {
+    row <- df[i, ]
+    tags$div(
+      class = "data-card",
+      tags$h4(paste0(i, ". ", row$data_source, " - ", row$match_score, "% match")),
+      tags$p(tags$b("Access: "), row$access_level_standardized, " | ", tags$b("Burden: "), row$access_burden_for_filter),
+      tags$p(tags$b("Category: "), row$category_for_filter),
+      tags$p(tags$b("Data type: "), row$data_type_for_filter),
+      tags$p(tags$b("Main use: "), row$main_data_type_use),
+      tags$p(tags$b("Why it matched: "), row$why_matched),
+      if (!is.na(row$official_url) && nchar(row$official_url) > 0) {
+        tags$a(href = row$official_url, target = "_blank", "Open official source")
+      } else {
+        tags$span(class = "small-note", "No URL provided in the source file.")
+      }
+    )
+  }))
+})
+
+output$compare_picker <- renderUI({
+  df <- scored_results()
+  selectizeInput(
+    "compare_sources",
+    "Choose 2-5 sources to compare",
+    choices = df$data_source,
+    selected = head(df$data_source, 3),
+    multiple = TRUE
+  )
+})
+
+output$compare_table <- DT::renderDT({
+  selected <- input$compare_sources %||% character()
+  df <- scored_results() |>
+    dplyr::filter(data_source %in% selected) |>
+    dplyr::select(
+      `Data Source` = data_source,
+      `Match Score` = match_score,
+      `Access` = access_level_standardized,
+      `Access Burden` = access_burden_for_filter,
+      `Category` = category_for_filter,
+      `Data Type` = data_type_for_filter,
+      `Population` = population,
+      `Geography` = geography_coverage,
+      `Unit` = unit_of_analysis,
+      `Years` = years_available,
+      `Linkage Potential` = linkage_potential,
+      `SC Relevance` = south_carolina_relevance,
+      `Limitations` = limitations_cautions
+    )
+
+  DT::datatable(df, rownames = FALSE, options = list(pageLength = 5, scrollX = TRUE, autoWidth = TRUE))
+})
+
+output$score_plot <- renderPlot({
+  df <- scored_results() |>
+    dplyr::slice_head(n = min(15, input$top_n))
+  validate(need(nrow(df) > 0, "No results to plot."))
+  ggplot(df, aes(x = reorder(data_source, match_score), y = match_score)) +
+    geom_col() +
+    coord_flip() +
+    labs(x = NULL, y = "Match score", title = "Top data source matches") +
+    theme_minimal(base_size = 12)
+})
+
+output$category_plot <- renderPlot({
+  df <- scored_results() |>
+    tidyr::separate_rows(category_for_filter, sep = ";") |>
+    dplyr::mutate(category_for_filter = stringr::str_squish(category_for_filter)) |>
+    dplyr::filter(nchar(category_for_filter) > 0) |>
+    dplyr::count(category_for_filter, sort = TRUE) |>
+    dplyr::slice_head(n = 15)
+  validate(need(nrow(df) > 0, "No categories to plot."))
+  ggplot(df, aes(x = reorder(category_for_filter, n), y = n)) +
+    geom_col() +
+    coord_flip() +
+    labs(x = NULL, y = "Number of matching sources", title = "Category distribution among current results") +
+    theme_minimal(base_size = 12)
+})
+
+data_fit_summary <- reactive({
+  df <- scored_results() |> dplyr::slice_head(n = 6)
+  if (nrow(df) == 0) return("No data sources meet the current criteria. Try broadening keywords or lowering the minimum score.")
+
+  top <- df[1, ]
+  companions <- df |> dplyr::slice(2:min(6, nrow(df))) |> dplyr::pull(data_source)
+  companion_text <- if (length(companions) > 0) paste(companions, collapse = "; ") else "None identified in the current search."
+
+  paste0(
+    "RDCD DATA FIT SUMMARY\n",
+    "=====================\n\n",
+    "Research question / concept:\n", input$question, "\n\n",
+    "Keywords used:\n", paste(search_terms(), collapse = ", "), "\n\n",
+    "Recommended primary source:\n", top$data_source, " (", top$match_score, "% match)\n",
+    "Access level: ", top$access_level_standardized, "\n",
+    "Access burden: ", top$access_burden_for_filter, "\n",
+    "Category: ", top$category_for_filter, "\n",
+    "Data type: ", top$data_type_for_filter, "\n",
+    "Main use: ", top$main_data_type_use, "\n\n",
+    "Suggested companion sources:\n", companion_text, "\n\n",
+    "Why this source fits:\n", top$why_matched, "\n\n",
+    "Suggested next RDCD step:\n",
+    "Confirm the outcome, exposure, population, geography, years, access requirements, and analytic unit before moving to analysis planning or formal data request.\n\n",
+    "Caution:\n",
+    "This tool supports triage and feasibility review. It does not replace IRB, DUA, data governance, or source-specific access review."
+  )
+})
+
+output$fit_summary <- renderText({
+  data_fit_summary()
+})
+
+output$methods_text <- renderUI({
+  HTML(paste0(
+    "<h4>How the MVP works</h4>",
+    "<ol>",
+    "<li>The app loads the Data_Prep sheet from the Excel template.</li>",
+    "<li>It builds searchable text from source name, narrative, access level, categories, keywords, notes, and other metadata fields.</li>",
+    "<li>If manual categories are blank, it infers likely categories using the Category_Keywords dictionary.</li>",
+    "<li>It calculates a transparent match score using keyword hits, category fit, data type fit, geography fit, access burden, linkage potential, and demo priority.</li>",
+    "<li>It displays ranked results, cards, comparison views, visual summaries, and a downloadable data-fit summary.</li>",
+    "</ol>",
+    "<h4>Recommended AI enhancement after MVP</h4>",
+    "<p>Add AI-assisted keyword expansion and semantic matching only after the curated metadata fields are stable. The app should not send sensitive project details or restricted data to an external model without institutional approval.</p>"
+  ))
+})
+
+output$download_results <- downloadHandler(
+  filename = function() {
+    paste0("rdcd_data_source_matches_", Sys.Date(), ".csv")
+  },
+  content = function(file) {
+    scored_results() |>
+      dplyr::select(
+        record_id, data_source, match_score, official_url, main_data_type_use,
+        access_level_standardized, access_burden_for_filter, category_for_filter,
+        data_type_for_filter, geography_coverage, why_matched
+      ) |>
+      utils::write.csv(file, row.names = FALSE)
+  }
+)
+
+output$download_summary <- downloadHandler(
+  filename = function() {
+    paste0("rdcd_data_fit_summary_", Sys.Date(), ".txt")
+  },
+  content = function(file) {
+    writeLines(data_fit_summary(), file)
+  }
+)
+```
+
+## 6. Development notes
+
+### Minimum metadata needed for the first demo
+
+For the first demo, complete the following fields for 10-15 high-priority data sources:
+
+1. Access Level Standardized
+2. Access Burden
+3. Primary Category
+4. Secondary Categories / Tags
+5. Keywords for Search
+6. Data Type Standardized
+7. Geography Coverage
+8. Geographic Unit
+9. Unit of Analysis
+10. Linkage Potential
+11. South Carolina Relevance
+12. Suggested Use Cases
+13. Companion Datasets
+14. Limitations / Cautions
+15. Data Governance Notes
+
+### Suggested first demo sources to curate
+
+For a South Carolina diabetes and SDOH demo, prioritize these rows:
+
+- CDC PLACES
+- CDC/ATSDR Social Vulnerability Index - SVI
+- U.S. Census American Community Survey - ACS
+- County Health Rankings and Roadmaps
+- AHRQ SDOH Database
+- USDA Food Environment Atlas
+- USDA Rural-Urban Continuum Codes
+- South Carolina DPH Public Health Data
+- SCDHHS Reports and Statistics
+- SC Health Data
+
+### AI/visualization phase after MVP
+
+After the rule-based prototype works, add:
+
+- Synonym expansion for investigator terms
+- Semantic search over data source narratives
+- Auto-generated "why this matched" text
+- Suggested companion datasets
+- Exportable consultation summary
+- A chart or matrix showing match score, access burden, geography, and data type

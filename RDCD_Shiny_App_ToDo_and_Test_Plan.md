@@ -28,7 +28,7 @@ If you want to try something a little crazy, go for it! just maybe break it off 
 
 It's great to have you on the team! Thank you so much for your help! If you have any questions, don't hesitate
 to reach out. Try to remember to pull each time you open the app and push before you leave to make sure we are 
-all working on the most up-to-date version. Other than that, good luck and have fun!
+all working on the most up-to-date version. Other than that, good luck and have fun!.
 
 - Sydney
 
@@ -65,7 +65,7 @@ to use it will be available on GitHub. [methods section deleted 7/20, SP]
 ### GitHub Page
 We could have an "Upload your own Workbook" section in GitHub that explains how to upload and use your own
 workbook. We would provide links to 2 copies of the workbook: (1) the default workbook we use that can be 
-edited/added to for their own work and (2) a blank workbook with all teh necessary sections so they can start
+edited/added to for their own work and (2) a blank workbook with all the necessary sections so they can start
 from scratch.
 
 ### Improve search quality
