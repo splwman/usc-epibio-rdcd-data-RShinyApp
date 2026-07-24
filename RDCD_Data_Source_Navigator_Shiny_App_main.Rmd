@@ -432,6 +432,33 @@ make_html_link <- function(label, url) {
   )
 }
 
+make_limitations_tooltip <- function(x) {
+  x <- as_text(x)
+
+  purrr::map_chr(x, function(txt) {
+    if (!nzchar(txt)) {
+      return('<span class="limitations-empty">Not specified</span>')
+    }
+
+    # Prevent quotes or HTML in the workbook from breaking the attribute.
+    safe_txt <- htmltools::htmlEscape(txt, attribute = TRUE)
+
+    sprintf(
+      paste0(
+        '<span ',
+        'class="limitations-trigger" ',
+        'tabindex="0" ',
+        'data-bs-toggle="tooltip" ',
+        'data-bs-placement="bottom" ',
+        'title="%s">',
+        'View limitations',
+        '</span>'
+      ),
+      safe_txt
+    )
+  })
+}
+
 DEFAULT_CATEGORIES <- c(
   "Chronic disease",
   "Cancer",
@@ -863,6 +890,59 @@ fluidPage(
   border: none;
   padding: 0;
 }
+
+/* Compact limitations cell */
+td.limitations-cell {
+  width: 125px !important;
+  min-width: 125px !important;
+  max-width: 125px !important;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.limitations-trigger {
+  display: inline-block;
+  color: #73000A;
+  cursor: help;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  border-bottom: 1px dotted #73000A;
+}
+
+.limitations-trigger:hover {
+  color: #5B0008;
+}
+
+.limitations-trigger:focus {
+  outline: 2px solid rgba(115, 0, 10, 0.3);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.limitations-empty {
+  color: #6B7280;
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Tooltip bubble */
+.tooltip {
+  z-index: 9999 !important;
+}
+
+.tooltip-inner {
+  max-width: 360px !important;
+  padding: 10px 12px !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 1.45 !important;
+  text-align: left !important;
+  white-space: normal !important;
+}
+
+
 ")),
     tags$script(HTML("
       function syncRdcdPanelHeights() {
@@ -883,6 +963,36 @@ fluidPage(
       $(document).on('shiny:connected', syncRdcdPanelHeights);
     "))
   ),
+
+  tags$script(HTML("
+  function initializeRdcdTooltips() {
+    if (!window.bootstrap || !bootstrap.Tooltip) {
+      return;
+    }
+
+    document
+      .querySelectorAll('.limitations-trigger')
+      .forEach(function(element) {
+        if (!bootstrap.Tooltip.getInstance(element)) {
+          new bootstrap.Tooltip(element, {
+            container: 'body',
+            trigger: 'hover focus',
+            boundary: 'document.body',
+            customClass: 'limitations-tooltip',
+            placement: 'bottom'
+
+          });
+        }
+      });
+  }
+
+  $(document).on(
+    'shiny:connected shiny:recalculated draw.dt shown.bs.tab',
+    function() {
+      window.setTimeout(initializeRdcdTooltips, 0);
+    }
+  );
+")),
 
   div(
     class = "rdcd-app",
@@ -1222,8 +1332,25 @@ output$compare_picker <- renderUI({
 
 output$compare_table <- DT::renderDT({
   selected <- input$compare_sources %||% character()
+
+  validate(
+    need(
+      length(selected) >= 2,
+      "Choose at least two sources to compare."
+    ),
+    need(
+      length(selected) <= 5,
+      "Choose no more than five sources."
+    )
+  )
+
   df <- scored_results() |>
     dplyr::filter(data_source %in% selected) |>
+    dplyr::mutate(
+      limitations_tooltip = make_limitations_tooltip(
+        limitations_cautions
+      )
+    ) |>
     dplyr::select(
       `Data Source` = data_source,
       `Match Score` = match_score,
@@ -1237,10 +1364,33 @@ output$compare_table <- DT::renderDT({
       `Years` = years_available,
       `Linkage Potential` = linkage_potential,
       `SC Relevance` = south_carolina_relevance,
-      `Limitations` = limitations_cautions
+      `Limitations` = limitations_tooltip
     )
 
-  DT::datatable(df, rownames = FALSE, options = list(pageLength = 5, scrollX = TRUE, autoWidth = TRUE))
+  limitations_column <- which(names(df) == "Limitations") - 1L
+
+  DT::datatable(
+    df,
+    rownames = FALSE,
+
+    # Escape all columns except the tooltip HTML column.
+    escape = setdiff(names(df), "Limitations"),
+
+    options = list(
+      pageLength = 5,
+      scrollX = TRUE,
+      autoWidth = FALSE,
+
+      columnDefs = list(
+        list(
+          targets = limitations_column,
+          width = "125px",
+          className = "limitations-cell",
+          orderable = FALSE
+        )
+      )
+    )
+  )
 })
 
 output$score_plot <- renderPlot({
