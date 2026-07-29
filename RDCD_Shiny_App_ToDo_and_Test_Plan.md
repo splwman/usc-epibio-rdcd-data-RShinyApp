@@ -9,7 +9,7 @@ the project, there are 5 documents to keep track of:
 *  **RDCD_Shiny_App_ToDo_and_Test_Plan.md** - That would be this document! The start will be
 a list of short-term improvements or a to-do list that can be worked on in the current draft
 of the app. Feel free to make suggestions or comments on any of them. If you are currently
-working on one or have completed one please include the information with you initials such
+working on one or have completed one please include the information with your initials such
 as [in progress 7/23, SP] or [completed 7/24, SP].
 * **RDCD_Data_Source_Preparation_Template.xlsx** - This is the excel sheet the app reads from.
 Feel free to add data sources or information to existing ones. Nick and I have reviewed each one,
@@ -47,7 +47,11 @@ assessing and fixing its functionality, I think we should keep it in for now. [c
 
 ## Compare Sources Section
 I think limitations should be under "more information" somewhere else. It is inflating the size of the output
-too much. Should we consider changing the orientation of the table?
+too much. Should we consider changing the orientation of the table? [completed.]
+
+The years needs to be standardized across data sources.
+
+The population needs to be shorter entries.
 
 ## Visual Summary Section
 Is this section necessary? This might work well under the compare sources section.

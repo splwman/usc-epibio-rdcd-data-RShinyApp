@@ -96,7 +96,42 @@ extract_words <- function(x) {
   unique(words[!words %in% stop_words])
 }
 
-#part of 7/9 fix for search_terms change
+concept_dictionary <- list(
+  cancer = c(
+ "cancer","oncology","tumor","tumour","neoplasm",
+ "malignancy","metastasis","metastatic",
+ "screening","survival","incidence","mortality",
+ "recurrence","chemotherapy","radiation",
+ "seer","tcga","tcia","nci","gdc","cancer registry"
+),
+  diabetes = c("diabetes", "hba1c", "glucose", "glycemia", "prediabetes",
+               "type 1", "type 2", "T1D", "T2D", "insulin", "A1C", "HbA1c",
+               "glycemic", "hyperglycemia", "hypoglycemia"),
+  cardiovascular = c(
+    "cardiovascular", "heart disease", "stroke", "hypertension",
+    "cardiac", "coronary", "myocardial infarction", "MI", "CHF",
+    "heart failure", "coronary artery disease", "CAD", "atrial fibrillation",
+    "AFib"
+  ),
+  mental_health = c(
+    "mental health", "depression", "anxiety", "suicide", "behavioral health",
+    "PTSD", "bipolar", "schizophrenia", "psychosis", "behavioral health", 
+    "psychiatric"
+  ),
+  sdoh = c(
+    "social vulnerability", "poverty", "income", "housing", "food access",
+    "svi", "acs"
+  )
+)
+
+expand_terms <- function(terms) {
+  terms <- unique(tolower(terms))
+  expanded <- unique(c(
+    terms,
+    unlist(concept_dictionary[intersect(names(concept_dictionary), terms)], use.names = FALSE)
+  ))
+  expanded[nchar(expanded) >= 3]
+}
 
 
 contains_any <- function(text, terms) {
@@ -343,16 +378,50 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
 
   query_text <- tolower(paste(terms, collapse = " "))
 
-  term_hits <- count_term_hits(df$search_text, terms)
-  max_hit_denominator <- max(1, min(10, length(terms)))
-  keyword_score <- pmin(40, round(40 * term_hits / max_hit_denominator, 1))
+  field_hits <- function(text, terms) {
+    if (length(terms) == 0) return(rep(0, length(text)))
+    purrr::map_int(text, function(txt) {
+      sum(vapply(
+        terms,
+        function(term) stringr::str_detect(txt, stringr::fixed(term, ignore_case = TRUE)),
+        logical(1)
+      ))
+    })
+  }
 
-  concept_score <- purrr::map_dbl(df$concept_text, function(src) {
+  weighted_field_score <- function(text, terms, weight) {
+    hits <- field_hits(text, terms)
+    pmin(100, hits * weight)
+  }
+
+  source_terms <- terms
+
+  keyword_hits_vec <- field_hits(df$search_text, source_terms)
+
+  score_data_source <- weighted_field_score(df$data_source, source_terms, 8)
+  score_keywords <- weighted_field_score(df$keywords_for_search, source_terms, 7)
+  score_category <- weighted_field_score(df$primary_category, source_terms, 6)
+  score_secondary <- weighted_field_score(df$secondary_categories_tags, source_terms, 5)
+  score_use_cases <- weighted_field_score(df$suggested_use_cases, source_terms, 3)
+  score_main_use <- weighted_field_score(df$main_data_type_use, source_terms, 3)
+  score_notes <- weighted_field_score(
+    paste(df$limitations_cautions, df$rdcd_consultation_notes, df$app_search_text),
+    source_terms,
+    1
+  )
+
+  keyword_score <- pmin(
+    50,
+    score_data_source + score_keywords + score_category + score_secondary +
+      score_use_cases + score_main_use + score_notes
+  )
+
+  concept_score_vec <- purrr::map_dbl(df$concept_text, function(src) {
     fit <- score_concepts(query_text, src)
     fit$boost - fit$penalty
   })
-  concept_score <- pmax(0, concept_score)
-  concept_hit <- concept_score > 0
+  concept_score_vec <- pmax(0, concept_score_vec)
+  concept_hit <- concept_score_vec > 0
 
   category_score <- if (length(category_filter) == 0) {
     rep(0, nrow(df))
@@ -387,21 +456,21 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
   linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 3,
                           ifelse(tolower(df$linkage_potential) == "medium", 2, 0))
 
-  matched_terms_text <- purrr::map_chr(df$search_text, ~ find_matched_terms(.x, terms))
+  matched_terms_text <- purrr::map_chr(df$search_text, ~ find_matched_terms(.x, source_terms))
 
-  raw_score <- keyword_score + concept_score + category_score + data_type_score +
-  geography_score + access_score + linkage_score
+  raw_score <- keyword_score + concept_score_vec + category_score + data_type_score +
+    geography_score + access_score + linkage_score
 
   out <- df |>
     dplyr::mutate(
-      keyword_hits = term_hits,
-      concept_score = round(concept_score, 1),
+      keyword_hits = keyword_hits_vec,
+      concept_score = round(concept_score_vec, 1),
       concept_hit = concept_hit,
       matched_terms = matched_terms_text,
       match_score = round(pmax(0, pmin(100, raw_score)), 1),
       why_matched = paste0(
         "Matched terms: ", matched_terms_text,
-        ". Concept fit: ", round(concept_score, 1),
+        ". Concept fit: ", round(concept_score_vec, 1),
         ". Category: ", category_for_filter,
         ". Access: ", access_level_standardized,
         "."
@@ -423,7 +492,6 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
   out |>
     dplyr::arrange(dplyr::desc(match_score), dplyr::desc(keyword_hits), data_source)
 }
-
 make_html_link <- function(label, url) {
   ifelse(
     is.na(url) | nchar(url) == 0,
@@ -1240,11 +1308,17 @@ observe({
 
 
 search_terms <- reactive({
-  unique(c(
+  base_terms <- unique(c(
     extract_words(input$question),
     split_terms(input$keyword_string)
   )) |>
     (\(x) x[nchar(x) >= 3])()
+
+  if (isTRUE(input$use_category_expansion)) {
+    expand_terms(base_terms)
+  } else {
+    base_terms
+  }
 })
 
 scored_results <- reactive({
