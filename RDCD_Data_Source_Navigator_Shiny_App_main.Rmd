@@ -84,6 +84,180 @@ split_terms <- function(x) {
   unique(terms)
 }
 
+# --- Search normalization + synonym expansion -------------------------------
+
+normalize_text <- function(x) {
+  x <- ifelse(is.na(x), "", as.character(x))
+  x <- tolower(x)
+  x <- stringr::str_replace_all(x, "[’`]", "'")
+  x <- stringr::str_replace_all(x, "[-_/]", " ")
+  x <- stringr::str_replace_all(x, "[^a-z0-9\\s]", " ")
+  stringr::str_squish(x)
+}
+
+light_stem <- function(word) {
+  w <- tolower(as.character(word))
+  if (nchar(w) <= 3) return(w)
+
+  if (grepl("ies$", w)) {
+    return(sub("ies$", "y", w))
+  }
+
+  if (grepl("(sses|xes|zes|ches|shes)$", w)) {
+    return(sub("es$", "", w))
+  }
+
+  if (grepl("ing$", w) && nchar(w) > 5) {
+    return(sub("ing$", "", w))
+  }
+
+  if (grepl("ed$", w) && nchar(w) > 4) {
+    return(sub("ed$", "", w))
+  }
+
+  if (grepl("s$", w) && !grepl("(ss|us|is|os|as|es)$", w) && nchar(w) > 4) {
+    return(sub("s$", "", w))
+  }
+
+  w
+}
+
+normalize_search_term <- function(term) {
+  term <- normalize_text(term)
+  if (!nzchar(term)) return("")
+
+  tokens <- stringr::str_split(term, "\\s+")[[1]]
+  tokens <- tokens[nchar(tokens) > 0]
+  tokens <- vapply(tokens, light_stem, character(1))
+  tokens <- tokens[nchar(tokens) > 0]
+
+  paste(tokens, collapse = " ")
+}
+
+normalize_search_terms <- function(x) {
+  if (is.null(x) || length(x) == 0) return(character())
+  vapply(x, normalize_search_term, character(1), USE.NAMES = FALSE)
+}
+
+parse_search_terms <- function(x) {
+  if (is.null(x) || length(x) == 0) return(character())
+
+  raw <- paste(x, collapse = " ")
+
+  quoted <- stringr::str_match_all(raw, '"([^"]+)"')[[1]]
+  quoted_terms <- if (nrow(quoted) > 0) quoted[, 2] else character()
+
+  stripped <- stringr::str_replace_all(raw, '"[^"]+"', " ")
+  pieces <- stringr::str_split(stripped, "[,;\\n\\r]+|\\s+and\\s+|\\s+or\\s+|\\s+")[[1]]
+
+  terms <- c(quoted_terms, pieces)
+  terms <- stringr::str_squish(terms)
+  terms <- terms[nchar(terms) >= 2]
+  unique(terms)
+}
+
+search_lexicon <- list(
+  diabetes = c(
+    "diabetes", "diabetic", "hba1c", "a1c", "glucose", "glycemia", "glycemic",
+    "prediabetes", "type 1 diabetes", "type 2 diabetes", "t1d", "t2d", "insulin"
+  ),
+  cancer = c(
+    "cancer", "oncology", "tumor", "tumour", "neoplasm", "malignancy",
+    "metastasis", "screening", "survival", "incidence", "mortality", "recurrence",
+    "chemotherapy", "radiation", "seer", "tcga", "tcia", "nci", "gdc"
+  ),
+  cardiovascular = c(
+    "cardiovascular", "heart disease", "stroke", "hypertension", "cardiac",
+    "coronary", "myocardial infarction", "heart failure", "atrial fibrillation",
+    "afib", "cad"
+  ),
+  mental_health = c(
+    "mental health", "depression", "anxiety", "suicide", "behavioral health",
+    "ptsd", "bipolar", "schizophrenia", "psychosis", "psychiatric"
+  ),
+  substance_use = c(
+    "opioid", "drug", "substance", "alcohol", "tobacco", "overdose",
+    "substance use", "drug use", "alcohol use", "smoking", "vaping"
+  ),
+  maternal_child_health = c(
+    "maternal", "pregnancy", "pregnant", "birth", "prenatal", "postpartum",
+    "infant", "child health", "women's health"
+  ),
+  food_access = c(
+    "food access", "food insecurity", "food environment", "food desert",
+    "nutrition access", "healthy food access", "food availability"
+  ),
+  social_vulnerability = c(
+    "social vulnerability", "svi", "vulnerability index", "community vulnerability",
+    "neighborhood disadvantage", "deprivation"
+  ),
+  health_care_access = c(
+    "health care access", "healthcare access", "access to care", "provider access",
+    "medical access", "care access"
+  ),
+  rurality = c(
+    "rural", "rurality", "nonurban", "non urban", "frontier", "remote"
+  ),
+  claims_payment = c(
+    "claims", "medicare", "medicaid", "payment", "spending", "cost", "billing",
+    "expenditure", "insurance"
+  ),
+  ehr_clinical = c(
+    "ehr", "electronic health record", "clinical", "encounter", "laboratory",
+    "lab results", "medication", "hospital", "icu"
+  ),
+  environment_exposure = c(
+    "environment", "air pollution", "air quality", "pm2.5", "pm 2.5", "ozone",
+    "water", "heat", "exposure", "climate"
+  ),
+  genomics_molecular = c(
+    "genomics", "genetic", "gene expression", "biospecimen", "molecular",
+    "transcriptomics", "genotype", "phenotype"
+  ),
+  imaging = c(
+    "imaging", "mri", "ct", "radiology", "dicom", "pathology", "scan"
+  ),
+  geospatial = c(
+    "county", "census tract", "tract", "zip", "zcta", "geospatial", "area level",
+    "area-level", "neighborhood", "location"
+  )
+)
+
+build_synonym_index <- function(dict) {
+  index <- list()
+
+  for (group_name in names(dict)) {
+    group_terms <- unique(c(group_name, dict[[group_name]]))
+    group_terms <- unique(vapply(group_terms, normalize_search_term, character(1)))
+    group_terms <- group_terms[nzchar(group_terms)]
+
+    for (term in group_terms) {
+      index[[term]] <- unique(c(index[[term]], group_terms))
+    }
+  }
+
+  index
+}
+
+synonym_index <- build_synonym_index(search_lexicon)
+
+expand_terms <- function(terms) {
+  if (is.null(terms) || length(terms) == 0) return(character())
+
+  normalized <- unique(vapply(terms, normalize_search_term, character(1)))
+  normalized <- normalized[nzchar(normalized)]
+
+  expanded <- normalized
+  for (term in normalized) {
+    if (!is.null(synonym_index[[term]])) {
+      expanded <- c(expanded, synonym_index[[term]])
+    }
+  }
+
+  unique(expanded[nzchar(expanded)])
+}
+# ---------------------------------------------------------------------------
+
 extract_words <- function(x) {
   if (is.null(x) || length(x) == 0) return(character())
   stop_words <- c(
@@ -320,30 +494,30 @@ prepare_catalog <- function(df) {
         access_level_standardized,
         raw_access_level
       ),
-     search_text = tolower(paste(
-  data_source,
-  official_link_text,
-  main_data_type_use,
-  raw_access_level,
-  access_level_standardized,
-  primary_category,
-  secondary_categories_tags,
-  keywords_for_search,
-  data_type_standardized,
-  topic_area_s,
-  population,
-  geography_coverage,
-  geographic_unit,
-  unit_of_analysis,
-  common_variables_measures,
-  suggested_use_cases,
-  companion_datasets,
-  limitations_cautions,
-  data_governance_notes,
-  rdcd_consultation_notes,
-  app_search_text,
-  sep = " "
-)),
+      search_text = tolower(paste(
+        data_source,
+        official_link_text,
+        main_data_type_use,
+        raw_access_level,
+        access_level_standardized,
+        primary_category,
+        secondary_categories_tags,
+        keywords_for_search,
+        data_type_standardized,
+        topic_area_s,
+        population,
+        geography_coverage,
+        geographic_unit,
+        unit_of_analysis,
+        common_variables_measures,
+        suggested_use_cases,
+        companion_datasets,
+        limitations_cautions,
+        data_governance_notes,
+        rdcd_consultation_notes,
+        app_search_text,
+        sep = " "
+      )),
       concept_text = tolower(paste(
         primary_category,
         secondary_categories_tags,
@@ -355,6 +529,20 @@ prepare_catalog <- function(df) {
         rdcd_consultation_notes,
         sep = " "
       )),
+
+      # Normalized text for forgiving search
+    search_text_normalized = normalize_text(search_text),
+    concept_text_normalized = normalize_text(concept_text),
+
+    data_source_norm = normalize_search_terms(data_source),
+    keywords_for_search_norm = normalize_search_terms(keywords_for_search),
+    primary_category_norm = normalize_search_terms(primary_category),
+    secondary_categories_tags_norm = normalize_search_terms(secondary_categories_tags),
+    suggested_use_cases_norm = normalize_search_terms(suggested_use_cases),
+    main_data_type_use_norm = normalize_search_terms(main_data_type_use),
+    limitations_cautions_norm = normalize_search_terms(limitations_cautions),
+    rdcd_consultation_notes_norm = normalize_search_terms(rdcd_consultation_notes),
+
       category_for_filter = dplyr::if_else(
         nchar(primary_category) > 0,
         primary_category,
@@ -368,15 +556,16 @@ prepare_catalog <- function(df) {
       access_burden_for_filter = standardize_access_burden(access_level_standardized, access_burden),
       official_url = dplyr::if_else(nchar(official_url) > 0, official_url, NA_character_)
     )
+
   df
 }
-
 
 
 score_catalog <- function(df, terms, category_filter, data_type_filter, geography_filter, access_filter, open_only) {
   if (nrow(df) == 0) return(df)
 
-  query_text <- tolower(paste(terms, collapse = " "))
+  source_terms <- unique(terms[nzchar(terms)])
+  query_text <- normalize_text(paste(terms, collapse = " "))
 
   field_hits <- function(text, terms) {
     if (length(terms) == 0) return(rep(0, length(text)))
@@ -394,18 +583,16 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
     pmin(100, hits * weight)
   }
 
-  source_terms <- terms
+  keyword_hits_vec <- field_hits(df$search_text_normalized, source_terms)
 
-  keyword_hits_vec <- field_hits(df$search_text, source_terms)
-
-  score_data_source <- weighted_field_score(df$data_source, source_terms, 8)
-  score_keywords <- weighted_field_score(df$keywords_for_search, source_terms, 7)
-  score_category <- weighted_field_score(df$primary_category, source_terms, 6)
-  score_secondary <- weighted_field_score(df$secondary_categories_tags, source_terms, 5)
-  score_use_cases <- weighted_field_score(df$suggested_use_cases, source_terms, 3)
-  score_main_use <- weighted_field_score(df$main_data_type_use, source_terms, 3)
+  score_data_source <- weighted_field_score(df$data_source_norm, source_terms, 8)
+  score_keywords <- weighted_field_score(df$keywords_for_search_norm, source_terms, 7)
+  score_category <- weighted_field_score(df$primary_category_norm, source_terms, 6)
+  score_secondary <- weighted_field_score(df$secondary_categories_tags_norm, source_terms, 5)
+  score_use_cases <- weighted_field_score(df$suggested_use_cases_norm, source_terms, 3)
+  score_main_use <- weighted_field_score(df$main_data_type_use_norm, source_terms, 3)
   score_notes <- weighted_field_score(
-    paste(df$limitations_cautions, df$rdcd_consultation_notes, df$app_search_text),
+    paste(df$limitations_cautions_norm, df$rdcd_consultation_notes_norm),
     source_terms,
     1
   )
@@ -416,7 +603,7 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
       score_use_cases + score_main_use + score_notes
   )
 
-  concept_score_vec <- purrr::map_dbl(df$concept_text, function(src) {
+  concept_score_vec <- purrr::map_dbl(df$concept_text_normalized, function(src) {
     fit <- score_concepts(query_text, src)
     fit$boost - fit$penalty
   })
@@ -456,7 +643,7 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
   linkage_score <- ifelse(tolower(df$linkage_potential) == "high", 3,
                           ifelse(tolower(df$linkage_potential) == "medium", 2, 0))
 
-  matched_terms_text <- purrr::map_chr(df$search_text, ~ find_matched_terms(.x, source_terms))
+  matched_terms_text <- purrr::map_chr(df$search_text_normalized, ~ find_matched_terms(.x, source_terms))
 
   raw_score <- keyword_score + concept_score_vec + category_score + data_type_score +
     geography_score + access_score + linkage_score
@@ -492,6 +679,8 @@ score_catalog <- function(df, terms, category_filter, data_type_filter, geograph
   out |>
     dplyr::arrange(dplyr::desc(match_score), dplyr::desc(keyword_hits), data_source)
 }
+
+
 make_html_link <- function(label, url) {
   ifelse(
     is.na(url) | nchar(url) == 0,
@@ -1308,16 +1497,20 @@ observe({
 
 
 search_terms <- reactive({
-  base_terms <- unique(c(
-    extract_words(input$question),
-    split_terms(input$keyword_string)
-  )) |>
-    (\(x) x[nchar(x) >= 3])()
+  question_terms <- unique(c(
+    parse_search_terms(input$question),
+    extract_words(input$question)
+  ))
+
+  keyword_terms <- parse_search_terms(input$keyword_string)
+
+  base_terms <- unique(c(question_terms, keyword_terms))
+  base_terms <- base_terms[nchar(base_terms) >= 2]
 
   if (isTRUE(input$use_category_expansion)) {
     expand_terms(base_terms)
   } else {
-    base_terms
+    unique(vapply(base_terms, normalize_search_term, character(1)))
   }
 })
 
