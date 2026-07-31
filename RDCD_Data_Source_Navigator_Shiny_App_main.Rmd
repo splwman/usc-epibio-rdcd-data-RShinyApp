@@ -241,21 +241,6 @@ build_synonym_index <- function(dict) {
 
 synonym_index <- build_synonym_index(search_lexicon)
 
-expand_terms <- function(terms) {
-  if (is.null(terms) || length(terms) == 0) return(character())
-
-  normalized <- unique(vapply(terms, normalize_search_term, character(1)))
-  normalized <- normalized[nzchar(normalized)]
-
-  expanded <- normalized
-  for (term in normalized) {
-    if (!is.null(synonym_index[[term]])) {
-      expanded <- c(expanded, synonym_index[[term]])
-    }
-  }
-
-  unique(expanded[nzchar(expanded)])
-}
 # ---------------------------------------------------------------------------
 
 extract_words <- function(x) {
@@ -299,12 +284,32 @@ concept_dictionary <- list(
 )
 
 expand_terms <- function(terms) {
-  terms <- unique(tolower(terms))
-  expanded <- unique(c(
-    terms,
-    unlist(concept_dictionary[intersect(names(concept_dictionary), terms)], use.names = FALSE)
-  ))
-  expanded[nchar(expanded) >= 3]
+  if (is.null(terms) || length(terms) == 0) return(character())
+
+  # Normalize input terms
+  normalized <- unique(vapply(terms, normalize_search_term, character(1)))
+  normalized <- normalized[nzchar(normalized)]
+
+  expanded <- normalized
+
+  # 1) Expand using the synonym index built from search_lexicon
+  for (term in normalized) {
+    if (!is.null(synonym_index[[term]])) {
+      expanded <- c(expanded, synonym_index[[term]])
+    }
+  }
+
+  # 2) Expand using the concept_dictionary
+  concept_terms <- unlist(
+    concept_dictionary[intersect(names(concept_dictionary), normalized)],
+    use.names = FALSE
+  )
+
+  if (length(concept_terms) > 0) {
+    expanded <- c(expanded, normalize_search_terms(concept_terms))
+  }
+
+  unique(expanded[nzchar(expanded)])
 }
 
 
