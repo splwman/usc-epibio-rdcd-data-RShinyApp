@@ -327,12 +327,6 @@ count_term_hits <- function(text, terms) {
   })
 }
 
-# matched_terms <- function(text, terms, max_terms = 12) {
-#   if (length(terms) == 0) return("")
-#   hits <- terms[stringr::str_detect(text, stringr::fixed(terms, ignore_case = TRUE))]
-#   paste(head(unique(hits), max_terms), collapse = "; ")
-# }
-
 find_matched_terms <- function(text, terms, max_terms = 12) {
   if (length(terms) == 0 || is.null(text) || length(text) == 0) return("")
 
@@ -824,643 +818,482 @@ fluidPage(
   theme = theme,
 
   tags$head(
-   tags$style(HTML("
-  :root {
-    --bs-primary: #73000A;
-    --bs-secondary: #9E1B32;
-    --bs-link-color: #73000A;
-    --bs-link-hover-color: #5B0008;
-  }
-
-  .rdcd-app {
-    background: #F7F7F7;
-    color: #333333;
-  }
-
-  .rdcd-header {
-    background: linear-gradient(135deg, #73000A 0%, #5B0008 100%);
-    color: #FFFFFF;
-    padding: 22px 28px;
-    margin: 0 0 18px 0;
-    border-radius: 0 0 18px 18px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-  }
-
-  .rdcd-header h1 {
-    margin: 0;
-    font-size: 30px;
-    font-weight: 700;
-    line-height: 1.15;
-  }
-
-  .rdcd-header .subtitle {
-    margin-top: 6px;
-    font-size: 15px;
-    font-weight: 500;
-    opacity: 0.92;
-  }
-
-  .rdcd-app .shiny-input-container {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  .shiny-input-container {
-    margin-bottom: 10px;
-  }
-
-  .form-group {
-    margin-bottom: 10px;
-  }
-
-  .selectize-input {
-    min-height: 34px;
-  }
-
-  .data-card {
-    border: 1px solid #D9D9D6;
-    border-left: 5px solid #73000A;
-    border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 14px;
-    background: #FFFFFF;
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
-  }
-
-  .data-card h4 {
-    margin-top: 0;
-    font-weight: 700;
-    color: #73000A;
-  }
-
-  .small-note {
-    font-size: 90%;
-    color: #666666;
-  }
-
-  .metric {
-    font-weight: 700;
-    color: #73000A;
-  }
-
-  .rdcd-app .row {
-    display: flex;
-    align-items: stretch;
-  }
-
-  .rdcd-app .sidebarPanel,
-  .rdcd-app .mainPanel {
-    float: none !important;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .rdcd-app .sidebarPanel {
-    background: linear-gradient(180deg, #FAF5F5 0%, #F4ECEC 100%);
-    border-right: 1px solid #D9D9D6;
-    padding-right: 15px;
-    min-height: 100%;
-  }
-
-  .rdcd-app .mainPanel {
-    min-width: 0;
-    padding-left: 20px;
-  }
-
-  .rdcd-app .sidebarPanel,
-  .rdcd-app .mainPanel {
-    min-height: calc(100vh - 190px);
-  }
-
-  .rdcd-app .well {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-    margin-bottom: 0;
-  }
-
-  /* Tabs */
-  .rdcd-app .nav-tabs > li > a,
-  .rdcd-app .nav-tabs .nav-link {
-    color: #73000A !important;
-    font-weight: 600;
-    border-radius: 10px 10px 0 0;
-  }
-
-  .rdcd-app .nav-tabs > li.active > a,
-  .rdcd-app .nav-tabs > li.active > a:hover,
-  .rdcd-app .nav-tabs > li.active > a:focus,
-  .rdcd-app .nav-tabs .nav-link.active,
-  .rdcd-app .nav-tabs .nav-item.show .nav-link {
-    color: #FFFFFF !important;
-    background-color: #73000A !important;
-    border-color: #73000A !important;
-  }
-
-  /* General links */
-  .rdcd-app a,
-  .rdcd-app a:visited {
-    color: #73000A !important;
-  }
-
-  .rdcd-app a:hover,
-  .rdcd-app a:focus {
-    color: #5B0008 !important;
-  }
-
-  .rdcd-app .nav-link:hover,
-  .rdcd-app .nav-link:focus,
-  .rdcd-app .page-link:hover,
-  .rdcd-app .page-link:focus {
-    color: #5B0008 !important;
-  }
-
-  /* DataTables / pagination */
-  .dataTables_wrapper .dataTables_paginate .paginate_button,
-  .dataTables_wrapper .dataTables_paginate .paginate_button.previous,
-  .dataTables_wrapper .dataTables_paginate .paginate_button.next,
-  .dt-paging-button,
-  .dt-paging-button.previous,
-  .dt-paging-button.next,
-  .page-link {
-    color: #73000A !important;
-    background: transparent !important;
-    border: 1px solid transparent !important;
-  }
-
-  .dataTables_wrapper .dataTables_paginate .paginate_button:hover,
-  .dataTables_wrapper .dataTables_paginate .paginate_button.current,
-  .dt-paging-button:hover,
-  .dt-paging-button.current,
-  .page-item.active .page-link {
-    color: #FFFFFF !important;
-    background: #73000A !important;
-    border-color: #73000A !important;
-  }
-
-  .dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
-  .dt-paging-button.disabled,
-  .page-item.disabled .page-link {
-    color: #9CA3AF !important;
-  }
-
-  .dataTables_wrapper .dataTables_length select {
-    border-color: #73000A;
-  }
-
-  .dataTables_wrapper .dataTables_filter input {
-    border-color: #73000A;
-  }
-
-  .tab-content {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-top: none;
-    border-radius: 0 12px 12px 12px;
-    padding: 18px;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
-  }
-
-  .btn-primary {
-    background-color: #73000A !important;
-    border-color: #73000A !important;
-    border-radius: 10px;
-    font-weight: 600;
-  }
-
-  .btn-primary:hover,
-  .btn-primary:focus,
-  .btn-primary:active {
-    background-color: #5B0008 !important;
-    border-color: #5B0008 !important;
-  }
-
-  .form-control,
-  .selectize-input {
-    border-radius: 10px !important;
-    border-color: #CBD5E1 !important;
-  }
-
-  .selectize-dropdown .active {
-    background-color: #73000A !important;
-    color: white !important;
-  }
-  
-  .fit-summary-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.fit-summary-hero {
-  background: linear-gradient(135deg, #73000A 0%, #5B0008 100%);
-  color: #FFFFFF;
-  border-radius: 18px;
-  padding: 22px 24px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.10);
-}
-
-.fit-summary-kicker {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.9;
-  margin-bottom: 6px;
-}
-
-.fit-summary-hero h3 {
-  margin: 0 0 8px 0;
-  font-size: 24px;
-  font-weight: 800;
-}
-
-.fit-summary-lead {
-  margin: 0;
-  font-size: 15px;
-  opacity: 0.95;
-  max-width: 860px;
-}
-
-.fit-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.fit-summary-card {
-  background: #FFFFFF;
-  border: 1px solid #D9D9D6;
-  border-radius: 14px;
-  padding: 16px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
-}
-
-.fit-summary-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: #73000A;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 8px;
-}
-
-.fit-summary-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1F2937;
-  line-height: 1.4;
-}
-
-.fit-summary-callout {
-  background: #FFFFFF;
-  border-left: 5px solid #73000A;
-  border-radius: 14px;
-  padding: 16px 18px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
-}
-
-.fit-summary-callout p {
-  margin: 0;
-  color: #333333;
-  line-height: 1.55;
-}
-
-.fit-summary-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-
-@media (max-width: 900px) {
-  .fit-summary-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.fit-summary-pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: inherit;
-  font-size: 15px;
-  line-height: 1.6;
-  color: #333333;
-  background: transparent;
-  border: none;
-  padding: 0;
-}
-
-/* Compact limitations cell */
-td.limitations-cell {
-  width: 125px !important;
-  min-width: 125px !important;
-  max-width: 125px !important;
-  white-space: nowrap;
-  vertical-align: top;
-}
-
-.limitations-trigger {
-  display: inline-block;
-  color: #73000A;
-  cursor: help;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
-  border-bottom: 1px dotted #73000A;
-}
-
-.limitations-trigger:hover {
-  color: #5B0008;
-}
-
-.limitations-trigger:focus {
-  outline: 2px solid rgba(115, 0, 10, 0.3);
-  outline-offset: 3px;
-  border-radius: 2px;
-}
-
-.limitations-empty {
-  color: #6B7280;
-  font-size: 12px;
-  font-style: italic;
-}
-
-/* Tooltip bubble */
-.tooltip {
-  z-index: 9999 !important;
-}
-
-.tooltip-inner {
-  max-width: 360px !important;
-  padding: 10px 12px !important;
-  font-size: 12px !important;
-  font-weight: 400 !important;
-  line-height: 1.45 !important;
-  text-align: left !important;
-  white-space: normal !important;
-}
-
-
-")),
-    tags$script(HTML("
-      function syncRdcdPanelHeights() {
-        var left = document.querySelector('.rdcd-app .sidebarPanel');
-        var right = document.querySelector('.rdcd-app .mainPanel');
-        if (!left || !right) return;
-
-        left.style.height = 'auto';
-        right.style.height = 'auto';
-
-        var h = Math.max(left.offsetHeight, right.offsetHeight);
-        left.style.height = h + 'px';
-        right.style.height = h + 'px';
+    tags$style(HTML("
+      :root {
+        --bs-primary: #73000A;
+        --bs-secondary: #9E1B32;
+        --bs-link-color: #73000A;
+        --bs-link-hover-color: #5B0008;
       }
 
-      $(document).on('shiny:recalculated', syncRdcdPanelHeights);
-      $(window).on('resize', syncRdcdPanelHeights);
-      $(document).on('shiny:connected', syncRdcdPanelHeights);
+      .rdcd-app {
+        background: #F7F7F7;
+        color: #333333;
+      }
+
+      .rdcd-shell {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 24px 28px 32px;
+      }
+
+      .rdcd-title {
+        margin: 0 0 6px 0;
+        font-size: 32px;
+        font-weight: 800;
+        line-height: 1.1;
+        color: #73000A;
+      }
+
+      .rdcd-subtitle {
+        margin: 0 0 22px 0;
+        font-size: 14px;
+        color: #6B7280;
+      }
+
+      .rdcd-section {
+        margin-bottom: 18px;
+      }
+
+      .rdcd-section-label {
+        margin: 0 0 8px 0;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #73000A;
+      }
+
+      .rdcd-details {
+        margin-top: 6px;
+      }
+
+      .rdcd-details summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: #73000A;
+        list-style: none;
+      }
+
+      .rdcd-details summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .rdcd-details-body {
+        margin-top: 10px;
+      }
+
+      .rdcd-results-header {
+        margin: 0 0 12px 0;
+      }
+
+      .rdcd-results-header h2 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 800;
+        color: #1F2937;
+      }
+
+      .rdcd-results-header p {
+        margin: 4px 0 0 0;
+        color: #6B7280;
+      }
+
+      .rdcd-app .shiny-input-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+      }
+
+      .shiny-input-container,
+      .form-group {
+        margin-bottom: 12px;
+      }
+
+      .form-control,
+      .selectize-input {
+        border-radius: 10px !important;
+        border-color: #D1D5DB !important;
+      }
+
+      .btn-primary {
+        background-color: #73000A !important;
+        border-color: #73000A !important;
+        border-radius: 10px;
+        font-weight: 600;
+      }
+
+      .btn-primary:hover,
+      .btn-primary:focus,
+      .btn-primary:active {
+        background-color: #5B0008 !important;
+        border-color: #5B0008 !important;
+      }
+
+      .tab-content {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 12px 0 0 0;
+      }
+
+      .nav-tabs {
+        border-bottom: 1px solid #E5E7EB;
+      }
+
+      .nav-tabs > li > a,
+      .nav-tabs .nav-link {
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        margin-right: 10px;
+        color: #73000A !important;
+        font-weight: 600;
+      }
+
+      .nav-tabs > li.active > a,
+      .nav-tabs > li.active > a:hover,
+      .nav-tabs > li.active > a:focus,
+      .nav-tabs .nav-link.active,
+      .nav-tabs .nav-item.show .nav-link {
+        border-bottom-color: #73000A !important;
+        color: #73000A !important;
+        background: transparent !important;
+      }
+
+      .data-card {
+        background: #FFFFFF;
+        border: 1px solid #EEF2F7;
+        border-left: 4px solid #73000A;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: none;
+      }
+
+      .small-note {
+        font-size: 90%;
+        color: #6B7280;
+      }
+
+      .fit-summary-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .fit-summary-hero {
+        background: linear-gradient(135deg, #73000A 0%, #5B0008 100%);
+        color: #FFFFFF;
+        border-radius: 16px;
+        padding: 20px 22px;
+        box-shadow: none;
+      }
+
+      .fit-summary-kicker {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        opacity: 0.9;
+        margin-bottom: 6px;
+      }
+
+      .fit-summary-hero h3 {
+        margin: 0 0 8px 0;
+        font-size: 24px;
+        font-weight: 800;
+      }
+
+      .fit-summary-lead {
+        margin: 0;
+        font-size: 15px;
+        opacity: 0.95;
+        max-width: 860px;
+      }
+
+      .fit-summary-callout {
+        background: #FFFFFF;
+        border: 1px solid #EEF2F7;
+        border-left: 4px solid #73000A;
+        border-radius: 14px;
+        padding: 16px 18px;
+        box-shadow: none;
+      }
+
+      .fit-summary-pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-family: inherit;
+        font-size: 15px;
+        line-height: 1.6;
+        color: #333333;
+        background: transparent;
+        border: none;
+        padding: 0;
+      }
+
+      .fit-summary-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 4px;
+      }
+
+      .rdcd-app .well {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 0;
+        margin-bottom: 0;
+      }
+
+      .tooltip {
+        z-index: 9999 !important;
+      }
+
+      .tooltip-inner {
+        max-width: 360px !important;
+        padding: 10px 12px !important;
+        font-size: 12px !important;
+        font-weight: 400 !important;
+        line-height: 1.45 !important;
+        text-align: left !important;
+        white-space: normal !important;
+      }
+
+      td.limitations-cell {
+        width: 125px !important;
+        min-width: 125px !important;
+        max-width: 125px !important;
+        white-space: nowrap;
+        vertical-align: top;
+      }
+
+      .limitations-trigger {
+        display: inline-block;
+        color: #73000A;
+        cursor: help;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        border-bottom: 1px dotted #73000A;
+      }
+
+      .limitations-trigger:hover {
+        color: #5B0008;
+      }
+
+      .limitations-trigger:focus {
+        outline: 2px solid rgba(115, 0, 10, 0.3);
+        outline-offset: 3px;
+        border-radius: 2px;
+      }
+
+      .limitations-empty {
+        color: #6B7280;
+        font-size: 12px;
+        font-style: italic;
+      }
+    ")),
+
+    tags$script(HTML("
+      function initializeRdcdTooltips() {
+        if (!window.bootstrap || !bootstrap.Tooltip) return;
+
+        document.querySelectorAll('.limitations-trigger').forEach(function(element) {
+          if (!bootstrap.Tooltip.getInstance(element)) {
+            new bootstrap.Tooltip(element, {
+              container: 'body',
+              trigger: 'hover focus',
+              boundary: 'document.body',
+              customClass: 'limitations-tooltip',
+              placement: 'bottom'
+            });
+          }
+        });
+      }
+
+      $(document).on('shiny:connected shiny:recalculated draw.dt shown.bs.tab', function() {
+        window.setTimeout(initializeRdcdTooltips, 0);
+      });
     "))
   ),
 
-  tags$script(HTML("
-  function initializeRdcdTooltips() {
-    if (!window.bootstrap || !bootstrap.Tooltip) {
-      return;
-    }
-
-    document
-      .querySelectorAll('.limitations-trigger')
-      .forEach(function(element) {
-        if (!bootstrap.Tooltip.getInstance(element)) {
-          new bootstrap.Tooltip(element, {
-            container: 'body',
-            trigger: 'hover focus',
-            boundary: 'document.body',
-            customClass: 'limitations-tooltip',
-            placement: 'bottom'
-
-          });
-        }
-      });
-  }
-
-  $(document).on(
-    'shiny:connected shiny:recalculated draw.dt shown.bs.tab',
-    function() {
-      window.setTimeout(initializeRdcdTooltips, 0);
-    }
-  );
-")),
-
   div(
     class = "rdcd-app",
-
     div(
-      class = "rdcd-header",
-      h1("RDCD Public Data Discovery Navigator"),
-      div(class = "subtitle", "University of South Carolina • Research Design & Data Coordination Core")
-    ),
+      class = "rdcd-shell",
 
-    sidebarLayout(
+      h1(class = "rdcd-title", "RDCD Public Data Discovery Navigator"),
+      div(class = "rdcd-subtitle", "University of South Carolina • Research Design & Data Coordination Core"),
 
-      sidebarPanel(
-        width = 4,
+      sidebarLayout(
+        sidebarPanel(
+          width = 4,
 
-        h4("Search Inputs"),
-
-        fileInput(
-          "catalog_file",
-          "Workbook",
-          accept = c(".xlsx")
-        ),
-
-        p(
-          class = "small-note",
-          "Upload a completed RDCD Data Source Preparation workbook or use the default workbook."
-        ),
-
-        tags$hr(),
-
-        h5("Research Question"),
-
-        shiny::tagAppendAttributes(
-          textAreaInput(
-            "question",
-            NULL,
-            value = "",
-            rows = 4,
-            width = "100%"
+          div(
+            class = "rdcd-section",
+            div(class = "rdcd-section-label", "Search"),
+            fileInput("catalog_file", "Workbook", accept = c(".xlsx")),
+            p(
+              class = "small-note",
+              "Upload a completed RDCD Data Source Preparation workbook or use the default workbook."
+            )
           ),
-          style = paste(
-            "resize: none !important;",
-            "width: 100% !important;",
-            "max-width: 100% !important;",
-            "min-width: 0 !important;",
-            "height: 120px !important;",
-            "min-height: 120px !important;",
-            "max-height: 120px !important;",
-            "overflow-y: auto !important;",
-            "overflow-x: hidden !important;",
-            "box-sizing: border-box !important;"
+
+          div(
+            class = "rdcd-section",
+            div(class = "rdcd-section-label", "Research Question"),
+            textAreaInput(
+              "question",
+              NULL,
+              value = "",
+              rows = 4,
+              width = "100%"
+            )
+          ),
+
+          div(
+            class = "rdcd-section",
+            div(class = "rdcd-section-label", "Keywords"),
+            textInput("keyword_string", "Keywords", value = ""),
+            checkboxInput(
+              "use_category_expansion",
+              "Expand search using category keyword dictionary",
+              TRUE
+            )
+          ),
+
+          tags$details(
+            class = "rdcd-details",
+            tags$summary("Filters"),
+            div(
+              class = "rdcd-details-body",
+              selectizeInput(
+                "category_filter",
+                "Category",
+                choices = DEFAULT_CATEGORIES,
+                multiple = TRUE,
+                options = list(placeholder = "Select categories")
+              ),
+              selectizeInput(
+                "data_type_filter",
+                "Data Type",
+                choices = DEFAULT_DATA_TYPES,
+                multiple = TRUE,
+                options = list(placeholder = "Select data types")
+              ),
+              selectizeInput(
+                "geography_filter",
+                "Geography",
+                choices = DEFAULT_GEO,
+                multiple = TRUE,
+                options = list(placeholder = "Select geography")
+              ),
+              selectizeInput(
+                "access_filter",
+                "Access Level",
+                choices = DEFAULT_ACCESS,
+                multiple = TRUE,
+                options = list(placeholder = "Select access levels")
+              ),
+              checkboxInput(
+                "open_only",
+                "Show only open/public or low-burden sources",
+                FALSE
+              ),
+              sliderInput(
+                "min_score",
+                "Minimum Match Score",
+                min = 0,
+                max = 100,
+                value = 15,
+                step = 5
+              ),
+              numericInput(
+                "top_n",
+                "Number of Results",
+                value = 10,
+                min = 5,
+                max = 50,
+                step = 5
+              )
+            )
+          ),
+
+          div(
+            class = "rdcd-section",
+            div(class = "rdcd-section-label", "Export"),
+            downloadButton("download_results", "Download Results")
           )
         ),
 
-        textInput(
-          "keyword_string",
-          "Keywords",
-          value = ""
-        ),
+        mainPanel(
+          width = 8,
 
-        checkboxInput(
-          "use_category_expansion",
-          "Expand search using category keyword dictionary",
-          TRUE
-        ),
-
-        tags$hr(),
-
-        h5("Filters"),
-
-        selectizeInput(
-          "category_filter",
-          "Category",
-          choices = DEFAULT_CATEGORIES,
-          multiple = TRUE,
-          options = list(
-            placeholder = "Select categories"
-          )
-        ),
-
-        selectizeInput(
-          "data_type_filter",
-          "Data Type",
-          choices = DEFAULT_DATA_TYPES,
-          multiple = TRUE,
-          options = list(
-            placeholder = "Select data types"
-          )
-        ),
-
-        selectizeInput(
-          "geography_filter",
-          "Geography",
-          choices = DEFAULT_GEO,
-          multiple = TRUE,
-          options = list(
-            placeholder = "Select geography"
-          )
-        ),
-
-        selectizeInput(
-          "access_filter",
-          "Access Level",
-          choices = DEFAULT_ACCESS,
-          multiple = TRUE,
-          options = list(
-            placeholder = "Select access levels"
-          )
-        ),
-
-        checkboxInput(
-          "open_only",
-          "Show only open/public or low-burden sources",
-          FALSE
-        ),
-
-        sliderInput(
-          "min_score",
-          "Minimum Match Score",
-          min = 0,
-          max = 100,
-          value = 15,
-          step = 5
-        ),
-
-        numericInput(
-          "top_n",
-          "Number of Results",
-          value = 10,
-          min = 5,
-          max = 50,
-          step = 5
-        ),
-
-        tags$hr(),
-
-        h5("Export"),
-
-        downloadButton(
-          "download_results",
-          "Download Results"
-        )
-      ),
-
-      mainPanel(
-        width = 8,
-
-        tabsetPanel(
-
-          tabPanel(
-            "Top Matches",
-            br(),
-            uiOutput("result_summary"),
-            DT::DTOutput("results_table")
+          div(
+            class = "rdcd-results-header",
+            h2("Results"),
+            p("Top matches, cards, comparison, and fit summary.")
           ),
 
-          tabPanel(
-            "Data Source Cards",
-            br(),
-            uiOutput("source_cards")
-          ),
+          tabsetPanel(
+            tabPanel(
+              "Top Matches",
+              uiOutput("result_summary"),
+              DT::DTOutput("results_table")
+            ),
 
-          tabPanel(
-            "Compare Sources",
-            br(),
-            uiOutput("compare_picker"),
-            DT::DTOutput("compare_table")
-          ),
+            tabPanel(
+              "Data Source Cards",
+              uiOutput("source_cards")
+            ),
 
-          tabPanel(
-            "Visual Summary",
-            br(),
-            plotOutput("score_plot", height = "420px"),
-            plotOutput("category_plot", height = "420px")
-          ),
+            tabPanel(
+              "Compare Sources",
+              uiOutput("compare_picker"),
+              DT::DTOutput("compare_table")
+            ),
 
-         tabPanel(
-  "Data Fit Summary",
-  br(),
+            tabPanel(
+              "Visual Summary",
+              plotOutput("score_plot", height = "420px"),
+              plotOutput("category_plot", height = "420px")
+            ),
 
-  div(
-    class = "fit-summary-shell",
+            tabPanel(
+              "Data Fit Summary",
+              div(
+                class = "fit-summary-shell",
 
-    div(
-      class = "fit-summary-hero",
-      div(class = "fit-summary-kicker", "AI-assisted recommendation"),
-      h3("Data Fit Recommendation"),
-      p(
-        class = "fit-summary-lead",
-        "A concise summary of the best-fit source(s), access path, and next RDCD step."
-      )
-    ),
+                div(
+                  class = "fit-summary-hero",
+                  div(class = "fit-summary-kicker", "AI-assisted recommendation"),
+                  h3("Data Fit Recommendation"),
+                  p(
+                    class = "fit-summary-lead",
+                    "A concise summary of the best-fit source(s), access path, and next RDCD step."
+                  )
+                ),
 
-    uiOutput("fit_summary"),
+                uiOutput("fit_summary"),
 
-    div(
-      class = "fit-summary-actions",
-      downloadButton("download_summary", "Download Summary")
-    )
-  )
-)
+                div(
+                  class = "fit-summary-actions",
+                  downloadButton("download_summary", "Download Summary")
+                )
+              )
+            )
+          )
         )
       )
     )
   )
 )
+
 ```
 
 
@@ -1574,14 +1407,31 @@ output$source_cards <- renderUI({
 
   tagList(purrr::map(seq_len(nrow(df)), function(i) {
     row <- df[i, ]
+
     tags$div(
       class = "data-card",
+
       tags$h4(paste0(i, ". ", row$data_source, " - ", row$match_score, "% match")),
-      tags$p(tags$b("Access: "), row$access_level_standardized, " | ", tags$b("Burden: "), row$access_burden_for_filter),
+
+      tags$p(
+        tags$b("Access: "), row$access_level_standardized,
+        " | ",
+        tags$b("Burden: "), row$access_burden_for_filter
+      ),
+
       tags$p(tags$b("Category: "), row$category_for_filter),
       tags$p(tags$b("Data type: "), row$data_type_for_filter),
       tags$p(tags$b("Main use: "), row$main_data_type_use),
-      tags$p(tags$b("Why it matched: "), row$why_matched),
+
+      tags$details(
+        class = "rdcd-details",
+        tags$summary("Why it matched"),
+        div(
+          class = "rdcd-details-body",
+          tags$p(row$why_matched)
+        )
+      ),
+
       if (!is.na(row$official_url) && nchar(row$official_url) > 0) {
         tags$a(href = row$official_url, target = "_blank", "Open official source")
       } else {
