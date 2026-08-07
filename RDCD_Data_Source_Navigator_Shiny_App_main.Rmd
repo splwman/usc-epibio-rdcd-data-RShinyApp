@@ -837,23 +837,52 @@ fluidPage(
         padding: 24px 28px 32px;
       }
 
-      .rdcd-title {
-        margin: 0 0 6px 0;
-        font-size: 32px;
-        font-weight: 800;
-        line-height: 1.1;
-        color: #73000A;
-      }
+      /* -------------------------------------------------
+   Header banner
+   ------------------------------------------------- */
 
-      .rdcd-subtitle {
-        margin: 0 0 22px 0;
-        font-size: 14px;
-        color: #6B7280;
-      }
+.rdcd-header-banner {
+  background: linear-gradient(
+    135deg,
+    #73000A 0%,
+    #5B0008 100%
+  );
+  border: none;
+  border-radius: 14px;
+  padding: 26px 30px;
+  margin-bottom: 30px;
+  box-shadow: 0 4px 12px rgba(31, 41, 55, 0.10);
+}
+
+.rdcd-header-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.rdcd-title {
+  margin: 0 0 8px 0;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #FFFFFF;
+  letter-spacing: -0.01em;
+}
+
+.rdcd-subtitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
 
       .rdcd-section {
-        margin-bottom: 18px;
-      }
+  margin-bottom: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
 
       .rdcd-section-label {
         margin: 0 0 8px 0;
@@ -865,8 +894,12 @@ fluidPage(
       }
 
       .rdcd-details {
-        margin-top: 6px;
-      }
+  margin-top: 6px;
+  margin-bottom: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
 
       .rdcd-details summary {
         cursor: pointer;
@@ -880,8 +913,11 @@ fluidPage(
       }
 
       .rdcd-details-body {
-        margin-top: 10px;
-      }
+  margin-top: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
 
       .rdcd-results-header {
         margin: 0 0 12px 0;
@@ -1097,28 +1133,164 @@ fluidPage(
         font-size: 12px;
         font-style: italic;
       }
-    ")),
+      
+      /* -------------------------------------------------
+   Increased spacing / modernized layout
+   ------------------------------------------------- */
 
-    tags$script(HTML("
-      function initializeRdcdTooltips() {
-        if (!window.bootstrap || !bootstrap.Tooltip) return;
+/* More breathing room between inputs */
+.rdcd-app .shiny-input-container,
+.rdcd-app .form-group {
+  margin-bottom: 18px !important;
+}
 
-        document.querySelectorAll('.limitations-trigger').forEach(function(element) {
-          if (!bootstrap.Tooltip.getInstance(element)) {
-            new bootstrap.Tooltip(element, {
-              container: 'body',
-              trigger: 'hover focus',
-              boundary: 'document.body',
-              customClass: 'limitations-tooltip',
-              placement: 'bottom'
-            });
-          }
-        });
-      }
+/* Give text fields and dropdowns more internal space */
+.rdcd-app .form-control {
+  padding: 10px 12px !important;
+  min-height: 42px;
+}
 
-      $(document).on('shiny:connected shiny:recalculated draw.dt shown.bs.tab', function() {
-        window.setTimeout(initializeRdcdTooltips, 0);
-      });
+/* More comfortable Selectize dropdowns */
+.rdcd-app .selectize-input {
+  padding: 10px 12px !important;
+  min-height: 42px !important;
+}
+
+/* More space around sidebar section headings */
+.rdcd-app .rdcd-section-label {
+  margin-bottom: 14px !important;
+  padding-top: 4px;
+}
+
+/* More room between major sidebar sections */
+.rdcd-app .rdcd-section {
+  margin-bottom: 28px !important;
+}
+
+/* More space inside expanded Filters */
+.rdcd-app .rdcd-details-body {
+  margin-top: 16px !important;
+}
+
+/* More comfortable filter heading */
+.rdcd-app .rdcd-details summary {
+  padding: 6px 0;
+}
+
+/* More breathing room around tabs */
+.rdcd-app .nav-tabs > li > a,
+.rdcd-app .nav-tabs .nav-link {
+  padding: 12px 16px !important;
+  margin-right: 6px;
+}
+
+/* More space between tabs and their content */
+.rdcd-app .tab-content {
+  padding-top: 20px !important;
+}
+
+/* More padding in result table cells */
+.rdcd-app table.dataTable thead th {
+  padding: 12px 14px !important;
+}
+
+.rdcd-app table.dataTable tbody td {
+  padding: 12px 14px !important;
+  vertical-align: middle;
+}
+
+/* More generous result cards */
+.rdcd-app .data-card {
+  padding: 22px !important;
+  margin-bottom: 16px !important;
+}
+
+/* More generous Data Fit Summary hero */
+.rdcd-app .fit-summary-hero {
+  padding: 26px 28px !important;
+}
+
+/* More space inside summary cards */
+.rdcd-app .fit-summary-callout {
+  padding: 22px 24px !important;
+}
+
+/* More space between summary components */
+.rdcd-app .fit-summary-shell {
+  gap: 18px !important;
+}
+
+/* -------------------------------------------------
+   Dashboard summary card
+   ------------------------------------------------- */
+
+.dashboard-summary-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  /* Same visual shape as title banner */
+  background: #F8F1F2;
+  border: 1px solid #E5D3D5;
+  border-radius: 14px;
+
+  padding: 20px 30px;
+  margin-bottom: 30px;
+
+  box-shadow: 0 4px 12px rgba(31, 41, 55, 0.08);
+}
+
+/* Each metric stays on one line */
+.dashboard-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+
+  flex: 1;
+  white-space: nowrap;
+}
+
+/* Bold metric numbers */
+.dashboard-metric-value {
+  font-size: 18px;
+  font-weight: 800 !important;
+  line-height: 1;
+  color: #73000A;
+}
+
+/* Metric description */
+.dashboard-metric-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4B5563;
+}
+
+/* Light separators */
+.dashboard-metric-divider {
+  width: 1px;
+  height: 24px;
+  background: #D8C7C9;
+  margin: 0 18px;
+  flex-shrink: 0;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+
+  .dashboard-summary-card {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .dashboard-metric {
+    flex: 1 1 40%;
+  }
+
+  .dashboard-metric-divider {
+    display: none;
+  }
+}
     "))
   ),
 
@@ -1127,169 +1299,291 @@ fluidPage(
     div(
       class = "rdcd-shell",
 
-      h1(class = "rdcd-title", "RDCD Public Data Discovery Navigator"),
-      div(class = "rdcd-subtitle", "University of South Carolina • Research Design & Data Coordination Core"),
+     div(
+  style = paste0(
+    "background:#73000A;",
+    "border-radius:14px;",
+    "padding:28px 30px;",
+    "margin-bottom:18px;",
+    "box-shadow:0 4px 12px rgba(31,41,55,0.12);"
+  ),
 
-      sidebarLayout(
-        sidebarPanel(
-          width = 4,
+  h1(
+    style = paste0(
+      "margin:0 0 8px 0;",
+      "font-size:30px;",
+      "font-weight:800;",
+      "line-height:1.15;",
+      "color:#FFFFFF;",
+      "letter-spacing:-0.01em;"
+    ),
+    "RDCD Public Data Discovery Navigator"
+  ),
 
-          div(
-            class = "rdcd-section",
-            div(class = "rdcd-section-label", "Search"),
-            fileInput("catalog_file", "Workbook", accept = c(".xlsx")),
-            p(
-              class = "small-note",
-              "Upload a completed RDCD Data Source Preparation workbook or use the default workbook."
-            )
-          ),
+  div(
+    style = paste0(
+      "margin:0;",
+      "font-size:14px;",
+      "font-weight:400;",
+      "line-height:1.5;",
+      "color:rgba(255,255,255,0.82);"
+    ),
+    "University of South Carolina • Research Design & Data Coordination Core"
+  )
+),
 
-          div(
-            class = "rdcd-section",
-            div(class = "rdcd-section-label", "Research Question"),
-            textAreaInput(
-              "question",
-              NULL,
-              value = "",
-              rows = 4,
-              width = "100%"
-            )
-          ),
+uiOutput("dashboard_summary"),
 
-          div(
-            class = "rdcd-section",
-            div(class = "rdcd-section-label", "Keywords"),
-            textInput("keyword_string", "Keywords", value = ""),
-            checkboxInput(
-              "use_category_expansion",
-              "Expand search using category keyword dictionary",
-              TRUE
-            )
-          ),
+      fluidRow(
+  column(
+    width = 4,
 
-          tags$details(
-            class = "rdcd-details",
-            tags$summary("Filters"),
-            div(
-              class = "rdcd-details-body",
-              selectizeInput(
-                "category_filter",
-                "Category",
-                choices = DEFAULT_CATEGORIES,
-                multiple = TRUE,
-                options = list(placeholder = "Select categories")
-              ),
-              selectizeInput(
-                "data_type_filter",
-                "Data Type",
-                choices = DEFAULT_DATA_TYPES,
-                multiple = TRUE,
-                options = list(placeholder = "Select data types")
-              ),
-              selectizeInput(
-                "geography_filter",
-                "Geography",
-                choices = DEFAULT_GEO,
-                multiple = TRUE,
-                options = list(placeholder = "Select geography")
-              ),
-              selectizeInput(
-                "access_filter",
-                "Access Level",
-                choices = DEFAULT_ACCESS,
-                multiple = TRUE,
-                options = list(placeholder = "Select access levels")
-              ),
-              checkboxInput(
-                "open_only",
-                "Show only open/public or low-burden sources",
-                FALSE
-              ),
-              sliderInput(
-                "min_score",
-                "Minimum Match Score",
-                min = 0,
-                max = 100,
-                value = 15,
-                step = 5
-              ),
-              numericInput(
-                "top_n",
-                "Number of Results",
-                value = 10,
-                min = 5,
-                max = 50,
-                step = 5
-              )
-            )
-          ),
+    div(
+      style = "padding:0; margin:0; background:transparent; border:none; box-shadow:none;",
 
-          div(
-            class = "rdcd-section",
-            div(class = "rdcd-section-label", "Export"),
-            downloadButton("download_results", "Download Results")
-          )
+      div(
+        style = paste0(
+          "background:#FFFFFF;",
+          "border:1px solid #E5E7EB;",
+          "border-radius:14px;",
+          "padding:18px 18px 14px;",
+          "margin-bottom:18px;",
+          "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
         ),
 
-        mainPanel(
-          width = 8,
+        div(
+          style = paste0(
+            "margin:0 0 14px 0;",
+            "font-size:12px;",
+            "font-weight:800;",
+            "letter-spacing:0.06em;",
+            "text-transform:uppercase;",
+            "color:#73000A;"
+          ),
+          "Search"
+        ),
 
-          div(
-            class = "rdcd-results-header",
-            h2("Results"),
-            p("Top matches, cards, comparison, and fit summary.")
+        textAreaInput(
+          "question",
+          "Research Question",
+          value = "",
+          rows = 4,
+          width = "100%"
+        ),
+
+        textInput(
+          "keyword_string",
+          "Keywords",
+          value = ""
+        ),
+
+        checkboxInput(
+          "use_category_expansion",
+          "Expand search using category keyword dictionary",
+          TRUE
+        )
+      ),
+
+      tags$details(
+        style = paste0(
+          "background:#FFFFFF;",
+          "border:1px solid #E5E7EB;",
+          "border-radius:14px;",
+          "padding:18px;",
+          "margin:0 0 18px 0;",
+          "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
+        ),
+
+        tags$summary(
+          style = paste0(
+            "margin:0;",
+            "font-size:12px;",
+            "font-weight:800;",
+            "letter-spacing:0.06em;",
+            "text-transform:uppercase;",
+            "color:#73000A;",
+            "cursor:pointer;"
+          ),
+          "Filters"
+        ),
+
+        div(
+          class = "rdcd-details-body",
+          style = "margin-top:18px;",
+
+          selectizeInput(
+            "category_filter",
+            "Category",
+            choices = DEFAULT_CATEGORIES,
+            multiple = TRUE,
+            options = list(placeholder = "Select categories")
           ),
 
-          tabsetPanel(
-            tabPanel(
-              "Top Matches",
-              uiOutput("result_summary"),
-              DT::DTOutput("results_table")
-            ),
+          selectizeInput(
+            "data_type_filter",
+            "Data Type",
+            choices = DEFAULT_DATA_TYPES,
+            multiple = TRUE,
+            options = list(placeholder = "Select data types")
+          ),
 
-            tabPanel(
-              "Data Source Cards",
-              uiOutput("source_cards")
-            ),
+          selectizeInput(
+            "geography_filter",
+            "Geography",
+            choices = DEFAULT_GEO,
+            multiple = TRUE,
+            options = list(placeholder = "Select geography")
+          ),
 
-            tabPanel(
-              "Compare Sources",
-              uiOutput("compare_picker"),
-              DT::DTOutput("compare_table")
-            ),
+          selectizeInput(
+            "access_filter",
+            "Access Level",
+            choices = DEFAULT_ACCESS,
+            multiple = TRUE,
+            options = list(placeholder = "Select access levels")
+          ),
 
-            tabPanel(
-              "Visual Summary",
-              plotOutput("score_plot", height = "420px"),
-              plotOutput("category_plot", height = "420px")
-            ),
+          checkboxInput(
+            "open_only",
+            "Show only open/public or low-burden sources",
+            FALSE
+          ),
 
-            tabPanel(
-              "Data Fit Summary",
-              div(
-                class = "fit-summary-shell",
+          sliderInput(
+            "min_score",
+            "Minimum Match Score",
+            min = 0,
+            max = 100,
+            value = 15,
+            step = 5
+          ),
 
-                div(
-                  class = "fit-summary-hero",
-                  div(class = "fit-summary-kicker", "AI-assisted recommendation"),
-                  h3("Data Fit Recommendation"),
-                  p(
-                    class = "fit-summary-lead",
-                    "A concise summary of the best-fit source(s), access path, and next RDCD step."
-                  )
-                ),
+          numericInput(
+            "top_n",
+            "Number of Results",
+            value = 10,
+            min = 5,
+            max = 50,
+            step = 5
+          )
+        )
+      ),
 
-                uiOutput("fit_summary"),
+      div(
+        style = paste0(
+          "background:#FFFFFF;",
+          "border:1px solid #E5E7EB;",
+          "border-radius:14px;",
+          "padding:18px 18px 14px;",
+          "margin-bottom:18px;",
+          "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
+        ),
 
-                div(
-                  class = "fit-summary-actions",
-                  downloadButton("download_summary", "Download Summary")
-                )
-              )
+        div(
+          style = paste0(
+            "margin:0 0 14px 0;",
+            "font-size:12px;",
+            "font-weight:800;",
+            "letter-spacing:0.06em;",
+            "text-transform:uppercase;",
+            "color:#73000A;"
+          ),
+          "Actions"
+        ),
+
+        downloadButton("download_results", "Download Results")
+      ),
+
+      div(
+        style = paste0(
+          "background:#FFFFFF;",
+          "border:1px solid #E5E7EB;",
+          "border-radius:14px;",
+          "padding:18px 18px 14px;",
+          "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
+        ),
+
+        div(
+          style = paste0(
+            "margin:0 0 14px 0;",
+            "font-size:12px;",
+            "font-weight:800;",
+            "letter-spacing:0.06em;",
+            "text-transform:uppercase;",
+            "color:#73000A;"
+          ),
+          "Workbook"
+        ),
+
+        fileInput("catalog_file", "Upload workbook", accept = c(".xlsx")),
+
+        p(
+          class = "small-note",
+          "Upload a completed Data Source Preparation workbook or use the default workbook."
+        )
+      )
+    )
+  ),
+
+  column(
+    width = 8,
+
+    div(
+      class = "rdcd-results-header",
+      h2("Results"),
+      p("Top matches, cards, comparison, and fit summary.")
+    ),
+
+    tabsetPanel(
+      tabPanel(
+        "Top Matches",
+        uiOutput("result_summary"),
+        DT::DTOutput("results_table")
+      ),
+
+      tabPanel(
+        "Data Source Cards",
+        uiOutput("source_cards")
+      ),
+
+      tabPanel(
+        "Compare Sources",
+        uiOutput("compare_picker"),
+        DT::DTOutput("compare_table")
+      ),
+
+      tabPanel(
+        "Visual Summary",
+        plotOutput("score_plot", height = "420px"),
+        plotOutput("category_plot", height = "420px")
+      ),
+
+      tabPanel(
+        "Data Fit Summary",
+        div(
+          class = "fit-summary-shell",
+
+          div(
+            class = "fit-summary-hero",
+            div(class = "fit-summary-kicker", "AI-assisted recommendation"),
+            h3("Data Fit Recommendation"),
+            p(
+              class = "fit-summary-lead",
+              "A concise summary of the best-fit source(s), access path, and next RDCD step."
             )
+          ),
+
+          uiOutput("fit_summary"),
+
+          div(
+            class = "fit-summary-actions",
+            downloadButton("download_summary", "Download Summary")
           )
         )
       )
+    )
+  )
+)
     )
   )
 )
@@ -1364,6 +1658,98 @@ scored_results <- reactive({
   ) |>
     dplyr::filter(match_score >= input$min_score)
 })
+
+output$dashboard_summary <- renderUI({
+
+  df <- scored_results()
+
+  matching_sources <- nrow(df)
+  terms_used <- length(search_terms())
+
+  highest_score <- if (nrow(df) > 0) max(df$match_score, na.rm = TRUE) else 0
+
+  open_public_count <- if (nrow(df) > 0) {
+    sum(
+      df$access_burden_for_filter == "Low" |
+        stringr::str_detect(
+          tolower(df$access_level_standardized),
+          "open|public"
+        ),
+      na.rm = TRUE
+    )
+  } else {
+    0
+  }
+
+  div(
+    style = paste0(
+      "background:#F8F1F2;",
+      "border:1px solid #E5D3D5;",
+      "border-radius:14px;",
+      "padding:20px 30px;",
+      "margin-bottom:30px;",
+      "box-shadow:0 4px 12px rgba(31,41,55,0.08);",
+      "display:flex;",
+      "align-items:center;",
+      "justify-content:space-between;"
+    ),
+
+    div(
+      style = "display:flex; align-items:baseline; gap:7px; flex:1; white-space:nowrap;",
+      span(
+        style = "font-size:18px; font-weight:800; line-height:1; color:#73000A;",
+        matching_sources
+      ),
+      span(
+        style = "font-size:13px; font-weight:500; color:#4B5563;",
+        "Matching Sources"
+      )
+    ),
+
+    div(style = "width:1px; height:24px; background:#D8C7C9; margin:0 18px; flex-shrink:0;"),
+
+    div(
+      style = "display:flex; align-items:baseline; gap:7px; flex:1; white-space:nowrap;",
+      span(
+        style = "font-size:18px; font-weight:800; line-height:1; color:#73000A;",
+        terms_used
+      ),
+      span(
+        style = "font-size:13px; font-weight:500; color:#4B5563;",
+        "Search Terms Used"
+      )
+    ),
+
+    div(style = "width:1px; height:24px; background:#D8C7C9; margin:0 18px; flex-shrink:0;"),
+
+    div(
+      style = "display:flex; align-items:baseline; gap:7px; flex:1; white-space:nowrap;",
+      span(
+        style = "font-size:18px; font-weight:800; line-height:1; color:#73000A;",
+        paste0(highest_score, "%")
+      ),
+      span(
+        style = "font-size:13px; font-weight:500; color:#4B5563;",
+        "Highest Match Score"
+      )
+    ),
+
+    div(style = "width:1px; height:24px; background:#D8C7C9; margin:0 18px; flex-shrink:0;"),
+
+    div(
+      style = "display:flex; align-items:baseline; gap:7px; flex:1; white-space:nowrap;",
+      span(
+        style = "font-size:18px; font-weight:800; line-height:1; color:#73000A;",
+        open_public_count
+      ),
+      span(
+        style = "font-size:13px; font-weight:500; color:#4B5563;",
+        "Open / Public Sources"
+      )
+    )
+  )
+})
+
 output$result_summary <- renderUI({
   df <- scored_results()
   tagList(
