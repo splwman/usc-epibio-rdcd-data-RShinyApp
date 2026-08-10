@@ -63,6 +63,8 @@ split_terms <- function(x) {
 normalize_text <- function(x) {
   x <- ifelse(is.na(x), "", as.character(x))
   x <- tolower(x)
+  x <- stringr::str_replace_all(x, "\\bcovid[- ]?19\\b", "covid19")
+  x <- stringr::str_replace_all(x, "\\bsars[- ]?cov[- ]?2\\b", "sarscov2")
   x <- stringr::str_replace_all(x, "[’`]", "'")
   x <- stringr::str_replace_all(x, "[-_/]", " ")
   x <- stringr::str_replace_all(x, "[^a-z0-9\\s]", " ")
@@ -134,6 +136,10 @@ search_lexicon <- list(
   diabetes = c(
     "diabetes", "diabetic", "hba1c", "a1c", "glucose", "glycemia", "glycemic",
     "prediabetes", "type 1 diabetes", "type 2 diabetes", "t1d", "t2d", "insulin"
+  ),
+  
+  covid19 = c("covid", "covid19", "covid-19", "covid 19", "sars-cov-2", "sars cov 2", 
+    "sarscov2", "coronavirus", "2019-ncov", "novel coronavirus"
   ),
   cancer = c(
     "cancer", "oncology", "tumor", "tumour", "neoplasm", "malignancy",
@@ -352,6 +358,11 @@ infer_data_type <- function(text) {
 #7/9 improvement
 concept_rules <- tibble::tribble(
   ~concept, ~query_pattern, ~source_pattern, ~boost, ~penalty,
+  
+  "COVID-19",
+  "\\bcovid\\b|covid ?19|covid19|sars[- ]?cov[- ]?2|sarscov2|coronavirus",
+  "\\bcovid\\b|covid ?19|covid19|sars[- ]?cov[- ]?2|sarscov2|coronavirus|n3c",
+  25, 12,
 
   "Cancer",
   "cancer|oncology|tumou?r|neoplasm|malignan",
@@ -459,14 +470,68 @@ load_catalog <- function(path) {
   raw[, needed]
 }
 
+standardize_access_level <- function(access_level_standardized, raw_access_level) {
+  existing <- as_text(access_level_standardized)
+  raw <- as_text(raw_access_level)
+
+  # Keep an existing standardized value when one is provided
+  candidate <- ifelse(nchar(existing) > 0, existing, raw)
+  access <- tolower(candidate)
+
+  dplyr::case_when(
+    access == "open/public" ~ "Open/public",
+    access == "registered public-use" ~ "Registered public-use",
+    access == "registered/controlled" ~ "Registered/controlled",
+    access == "credentialed access" ~ "Credentialed access",
+    access == "controlled/restricted" ~ "Controlled/restricted",
+    access == "public-use plus restricted files" ~ "Public-use plus restricted files",
+    access == "open plus controlled data" ~ "Open plus controlled data",
+    access == "open plus credentialed access" ~ "Open plus credentialed access",
+    access == "open/public with terms" ~ "Open/public with terms",
+
+    # Mixed public + restricted access
+    stringr::str_detect(access, "registered") &
+      stringr::str_detect(access, "controlled|restricted") ~
+      "Registered/controlled",
+
+    stringr::str_detect(access, "open|public") &
+      stringr::str_detect(access, "credentialed") ~
+      "Open plus credentialed access",
+
+    stringr::str_detect(access, "open|public") &
+      stringr::str_detect(access, "controlled|restricted|purchased") ~
+      "Open plus controlled data",
+
+    # Single access types
+    stringr::str_detect(access, "registered") ~
+      "Registered public-use",
+
+    stringr::str_detect(access, "credentialed") ~
+      "Credentialed access",
+
+    stringr::str_detect(access, "controlled|restricted|purchased") ~
+      "Controlled/restricted",
+
+    stringr::str_detect(access, "terms of use") ~
+      "Open/public with terms",
+
+    # General public/free-access descriptions
+    stringr::str_detect(
+      access,
+      "open|public|free data|free download|no account|without authentication"
+    ) ~ "Open/public",
+
+    TRUE ~ "Unknown"
+  )
+}
+
 prepare_catalog <- function(df) {
   df <- df |>
     dplyr::mutate(
-      access_level_standardized = dplyr::if_else(
-        nchar(access_level_standardized) > 0,
-        access_level_standardized,
-        raw_access_level
-      ),
+      access_level_standardized = standardize_access_level(
+  access_level_standardized,
+  raw_access_level
+),
       search_text = tolower(paste(
         data_source,
         official_link_text,
@@ -724,7 +789,9 @@ make_limitations_tooltip <- function(x) {
         '<span ',
         'class="limitations-trigger" ',
         'tabindex="0" ',
+        'role="button" ',
         'data-bs-toggle="tooltip" ',
+        'data-bs-trigger="click" ',
         'data-bs-placement="bottom" ',
         'title="%s">',
         'View limitations',
@@ -1213,11 +1280,11 @@ fluidPage(
       }
 
       .tooltip-inner {
-        max-width: 360px !important;
-        padding: 10px 12px !important;
+        max-width: 450px !important;
+        padding: 12px 14px !important;
         font-size: 12px !important;
         font-weight: 400 !important;
-        line-height: 1.45 !important;
+        line-height: 1.5 !important;
         text-align: left !important;
         white-space: normal !important;
       }
@@ -1231,18 +1298,20 @@ fluidPage(
       }
 
       .limitations-trigger {
-        display: inline-block;
-        color: #73000A;
-        cursor: help;
-        font-size: 12px;
-        font-weight: 700;
-        line-height: 1.2;
-        white-space: nowrap;
-        border-bottom: 1px dotted #73000A;
-      }
+          display: inline-block;
+          color: #0066CC;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.2;
+          white-space: nowrap;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+        }
 
       .limitations-trigger:hover {
-        color: #5B0008;
+        color: #004C99;
+        text-decoration-thickness: 2px;
       }
 
       .limitations-trigger:focus {
@@ -1985,7 +2054,7 @@ processed_catalog <- reactive({
 
 observe({
   df <- processed_catalog()
-  category_choices <- unique(c(DEFAULT_CATEGORIES, split_terms(df$category_for_filter)))
+  category_choices <- unique(c(DEFAULT_CATEGORIES, as_text(df$category_for_filter)))
   category_choices <- sort(category_choices[nchar(category_choices) > 0])
   data_type_choices <- unique(c(DEFAULT_DATA_TYPES, df$data_type_for_filter))
   data_type_choices <- sort(data_type_choices[nchar(data_type_choices) > 0])
