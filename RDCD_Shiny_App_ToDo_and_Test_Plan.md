@@ -72,6 +72,17 @@ workbook. We would provide links to 2 copies of the workbook: (1) the default wo
 edited/added to for their own work and (2) a blank workbook with all the necessary sections so they can start
 from scratch.
 
+### AI/visualization phase after MVP
+
+After the rule-based prototype works, add:
+
+- Synonym expansion for investigator terms
+- Semantic search over data source narratives
+- Auto-generated "why this matched" text
+- Suggested companion datasets
+- Exportable consultation summary
+- A chart or matrix showing match score, access burden, geography, and data type
+
 ### Improve search quality
 
 1. Adjust the scoring weights.

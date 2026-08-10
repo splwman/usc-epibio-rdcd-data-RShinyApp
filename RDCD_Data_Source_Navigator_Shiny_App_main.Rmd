@@ -10,33 +10,7 @@ output:
 runtime: shiny
 ---
 
-## 1. Purpose
 
-This R Markdown file is a runnable Shiny prototype for an RDCD data source discovery tool. The app helps investigators move from a broad research idea to a ranked shortlist of public, registered, credentialed, or controlled data sources.
-
-The prototype is designed to use the Excel workbook `RDCD_Data_Source_Preparation_Template.xlsx`. The minimum viable product uses transparent logic: keyword screening, curated categories, filters, and a simple weighted scoring model. A later version can add an AI-assisted layer for keyword expansion, semantic matching, and plain-language explanations.
-
-## 2. Demo concept
-
-Example demo question:
-
-> Diabetes outcomes in rural South Carolina communities, with interest in social vulnerability, food access, and health care access.
-
-Example user inputs:
-
-- Research question: free-text paragraph
-- Keywords: diabetes; rural; South Carolina; social vulnerability; food access; Medicaid
-- Filters: category, data type, geography, access level, open-only toggle
-
-Expected output:
-
-- Ranked data source table
-- Data source cards with fit rationale
-- Match score plot
-- Access burden and category summaries
-- Exportable data-fit summary for RDCD consultation
-
-## 3. Setup
 
 ```{r setup, include=FALSE}
 required_pkgs <- c(
@@ -688,6 +662,52 @@ make_html_link <- function(label, url) {
   )
 }
 
+make_score_badge <- function(score) {
+  purrr::map_chr(score, function(x) {
+    if (is.na(x)) {
+      return(
+        '<span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap;background:#F3F4F6;color:#4B5563;">N/A</span>'
+      )
+    }
+
+    if (x >= 70) {
+      bg <- "#DCFCE7"; fg <- "#166534"
+    } else if (x >= 40) {
+      bg <- "#FEF3C7"; fg <- "#92400E"
+    } else {
+      bg <- "#FEE2E2"; fg <- "#991B1B"
+    }
+
+    sprintf(
+      '<span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap;background:%s;color:%s;">%s%%</span>',
+      bg, fg, round(x)
+    )
+  })
+}
+
+make_access_badge <- function(access) {
+  purrr::map_chr(access, function(x) {
+    access_lower <- tolower(as_text(x))
+
+    if (stringr::str_detect(access_lower, "restricted")) {
+      bg <- "#FEE2E2"; fg <- "#991B1B"; label <- "Restricted"
+    } else if (stringr::str_detect(access_lower, "controlled|credentialed")) {
+      bg <- "#FEF3C7"; fg <- "#92400E"; label <- "Controlled"
+    } else if (stringr::str_detect(access_lower, "registered")) {
+      bg <- "#E0F2FE"; fg <- "#075985"; label <- "Registered"
+    } else if (stringr::str_detect(access_lower, "open|public")) {
+      bg <- "#DCFCE7"; fg <- "#166534"; label <- "Open"
+    } else {
+      bg <- "#F3F4F6"; fg <- "#4B5563"; label <- ifelse(nzchar(x), x, "Unknown")
+    }
+
+    sprintf(
+      '<span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap;background:%s;color:%s;">%s</span>',
+      bg, fg, htmltools::htmlEscape(label)
+    )
+  })
+}
+
 make_limitations_tooltip <- function(x) {
   x <- as_text(x)
 
@@ -801,9 +821,6 @@ geography_filter_terms <- function(filters) {
 ```
 
 
-
-## 4. App interface
-
 ```{r ui, echo=FALSE}
 
 theme <- bs_theme(
@@ -820,11 +837,88 @@ fluidPage(
   tags$head(
     tags$style(HTML("
       :root {
-        --bs-primary: #73000A;
-        --bs-secondary: #9E1B32;
-        --bs-link-color: #73000A;
-        --bs-link-hover-color: #5B0008;
+  /* Brand */
+  --rdcd-primary: #73000A;
+  --rdcd-primary-dark: #5B0008;
+  --rdcd-primary-soft: #F8F1F2;
+
+  /* Backgrounds */
+  --rdcd-bg: #F7F7F7;
+  --rdcd-surface: #FFFFFF;
+  --rdcd-surface-muted: #F9FAFB;
+
+  /* Text */
+  --rdcd-text: #333333;
+  --rdcd-text-strong: #1F2937;
+  --rdcd-text-muted: #6B7280;
+
+  /* Borders */
+  --rdcd-border: #E5E7EB;
+  --rdcd-border-light: #EEF2F7;
+
+  /* Bootstrap */
+  --bs-primary: #73000A;
+  --bs-secondary: #6B7280;
+  --bs-link-color: #73000A;
+  --bs-link-hover-color: #5B0008;
       }
+
+/* -------------------------------------------------
+   Typography system
+   ------------------------------------------------- */
+
+.rdcd-app {
+ font-family:
+  -apple-system,
+  BlinkMacSystemFont,
+  'Segoe UI',
+  Roboto,
+  Helvetica,
+  Arial,
+  sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--rdcd-text);
+}
+
+.rdcd-app h1,
+.rdcd-app h2,
+.rdcd-app h3,
+.rdcd-app h4,
+.rdcd-app h5,
+.rdcd-app h6,
+.rdcd-app p,
+.rdcd-app span,
+.rdcd-app button,
+.rdcd-app input,
+.rdcd-app select,
+.rdcd-app textarea,
+.rdcd-app summary,
+.rdcd-app table {
+  font-family: inherit;
+}
+
+.rdcd-app .rdcd-title {
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.rdcd-app .rdcd-subtitle {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.rdcd-app .rdcd-section-label,
+.rdcd-app .rdcd-results-header p,
+.rdcd-app .small-note {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.rdcd-app .rdcd-results-header h2 {
+  font-size: 20px;
+  line-height: 1.2;
+}
 
       .rdcd-app {
         background: #F7F7F7;
@@ -836,6 +930,29 @@ fluidPage(
         margin: 0 auto;
         padding: 24px 28px 32px;
       }
+      
+      .rdcd-app .rdcd-search-summary {
+  margin-top: 8px;
+}
+
+.rdcd-app .rdcd-search-summary summary {
+  cursor: pointer;
+  color: #73000A;
+  font-weight: 600;
+  list-style: none;
+}
+
+.rdcd-app .rdcd-search-summary summary::-webkit-details-marker {
+  display: none;
+}
+
+.rdcd-app .rdcd-search-summary-body {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+}
 
       /* -------------------------------------------------
    Header banner
@@ -919,22 +1036,6 @@ fluidPage(
   background: transparent;
 }
 
-      .rdcd-results-header {
-        margin: 0 0 12px 0;
-      }
-
-      .rdcd-results-header h2 {
-        margin: 0;
-        font-size: 20px;
-        font-weight: 800;
-        color: #1F2937;
-      }
-
-      .rdcd-results-header p {
-        margin: 4px 0 0 0;
-        color: #6B7280;
-      }
-
       .rdcd-app .shiny-input-container {
         width: 100% !important;
         max-width: 100% !important;
@@ -966,38 +1067,60 @@ fluidPage(
         border-color: #5B0008 !important;
       }
 
-      .tab-content {
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        padding: 12px 0 0 0;
-      }
+ /* Tabs — pill style */
+.rdcd-app .nav-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid #E5E7EB;
+  padding-bottom: 10px;
+  margin-bottom: 0;
+}
 
-      .nav-tabs {
-        border-bottom: 1px solid #E5E7EB;
-      }
+.rdcd-app .nav-pills > li,
+.rdcd-app .nav-pills .nav-item {
+  margin-bottom: 0;
+}
 
-      .nav-tabs > li > a,
-      .nav-tabs .nav-link {
-        border: none;
-        border-bottom: 2px solid transparent;
-        border-radius: 0;
-        background: transparent;
-        margin-right: 10px;
-        color: #73000A !important;
-        font-weight: 600;
-      }
+.rdcd-app .nav-pills > li > a,
+.rdcd-app .nav-pills .nav-link {
+  margin: 0 !important;
+  padding: 10px 16px !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 999px !important;
+  background: #F9FAFB !important;
+  color: #6B7280 !important;
+  font-weight: 600 !important;
+  line-height: 1.2;
+}
 
-      .nav-tabs > li.active > a,
-      .nav-tabs > li.active > a:hover,
-      .nav-tabs > li.active > a:focus,
-      .nav-tabs .nav-link.active,
-      .nav-tabs .nav-item.show .nav-link {
-        border-bottom-color: #73000A !important;
-        color: #73000A !important;
-        background: transparent !important;
-      }
+.rdcd-app .nav-pills > li > a:hover,
+.rdcd-app .nav-pills .nav-link:hover {
+  background: #F8F1F2 !important;
+  color: #73000A !important;
+  border-color: #E5D3D5 !important;
+}
 
+.rdcd-app .nav-pills > li.active > a,
+.rdcd-app .nav-pills > li.active > a:hover,
+.rdcd-app .nav-pills > li.active > a:focus,
+.rdcd-app .nav-pills .nav-link.active,
+.rdcd-app .nav-pills .nav-item.show .nav-link {
+  background: #73000A !important;
+  color: #FFFFFF !important;
+  border-color: #73000A !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 6px rgba(115, 0, 10, 0.18);
+}
+
+.rdcd-app .nav-pills .nav-link:focus-visible {
+  outline: 3px solid rgba(115, 0, 10, 0.22);
+  outline-offset: 2px;
+}
+
+.rdcd-app .tab-content {
+  padding-top: 20px !important;
+}
       .data-card {
         background: #FFFFFF;
         border: 1px solid #EEF2F7;
@@ -1189,14 +1312,235 @@ fluidPage(
   padding-top: 20px !important;
 }
 
-/* More padding in result table cells */
-.rdcd-app table.dataTable thead th {
-  padding: 12px 14px !important;
+.rdcd-start-state {
+  margin-top: 20px;
+  padding: 28px;
+  background: #FFFFFF;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04),
+              0 6px 18px rgba(16, 24, 40, 0.05);
 }
 
-.rdcd-app table.dataTable tbody td {
+.rdcd-start-state h3 {
+  margin: 0 0 8px;
+  color: #1F2937;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.rdcd-start-state p {
+  margin: 0;
+  color: #6B7280;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+
+.rdcd-context-matches {
+  flex-shrink: 0;
+}
+
+.rdcd-context-filters {
+  flex: 1;
+  overflow: hidden;
+}
+
+.rdcd-context-sort {
+  flex-shrink: 0;
+}
+
+.rdcd-context-value {
+  color: #73000A;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.rdcd-context-label {
+  color: #4B5563;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rdcd-context-text {
+  color: #6B7280;
+  font-size: 13px;
+  font-weight: 500;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* Stack gracefully on smaller screens */
+@media (max-width: 900px) {
+
+  .rdcd-results-context {
+    flex-wrap: wrap;
+    gap: 10px 14px;
+  }
+
+  .rdcd-context-divider {
+    display: none;
+  }
+
+  .rdcd-context-filters {
+    flex-basis: 100%;
+    order: 3;
+  }
+}
+
+/* -------------------------------------------------
+   Empty results state
+   ------------------------------------------------- */
+
+.rdcd-empty-state {
+  margin-top: 20px;
+  padding: 42px 28px;
+  text-align: center;
+
+  background: #FFFFFF;
+  border-radius: 14px;
+
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 6px 18px rgba(16, 24, 40, 0.05);
+}
+
+
+.rdcd-empty-state h3 {
+  margin: 0 0 8px;
+  color: #1F2937;
+
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.rdcd-empty-state p {
+  max-width: 520px;
+  margin: 0 auto;
+
+  color: #6B7280;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* -------------------------------------------------
+   Cleaner results data table
+   ------------------------------------------------- */
+
+.rdcd-app .dataTables_wrapper table.dataTable {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  width: 100% !important;
+}
+
+/* Stronger, cleaner header */
+.rdcd-app .dataTables_wrapper table.dataTable thead th {
+  background: #F9FAFB !important;
+  color: #1F2937 !important;
+  font-weight: 700 !important;
   padding: 12px 14px !important;
   vertical-align: middle;
+
+  border-top: 1px solid #E5E7EB !important;
+  border-bottom: 1px solid #E5E7EB !important;
+}
+
+/* More comfortable row height + lighter borders */
+.rdcd-app .dataTables_wrapper table.dataTable tbody td {
+  padding: 13px 14px !important;
+  vertical-align: middle;
+
+  border-top: 1px solid #EEF2F7 !important;
+  border-bottom: none !important;
+}
+
+/* Zebra striping */
+.rdcd-app .dataTables_wrapper table.dataTable.stripe tbody tr:nth-child(odd) {
+  background-color: #FAFBFC !important;
+}
+
+.rdcd-app .dataTables_wrapper table.dataTable.stripe tbody tr:nth-child(even) {
+  background-color: #FFFFFF !important;
+}
+
+/* Row hover */
+.rdcd-app .dataTables_wrapper table.dataTable.hover tbody tr:hover {
+  background-color: #F8F1F2 !important;
+}
+
+/* Smooth hover transition */
+.rdcd-app .dataTables_wrapper table.dataTable tbody tr {
+  transition: background-color 0.12s ease;
+}
+
+/* -------------------------------------------------
+   Score + access badges
+   ------------------------------------------------- */
+
+.rdcd-app .score-badge,
+.rdcd-app .access-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 4px 9px;
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+
+  white-space: nowrap;
+}
+
+
+/* Match score badges */
+
+.rdcd-app .score-high {
+  background: #DCFCE7;
+  color: #166534;
+}
+
+.rdcd-app .score-medium {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.rdcd-app .score-low {
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
+
+/* Access badges */
+
+.rdcd-app .access-open {
+  background: #DCFCE7;
+  color: #166534;
+}
+
+.rdcd-app .access-registered {
+  background: #E0F2FE;
+  color: #075985;
+}
+
+.rdcd-app .access-controlled {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.rdcd-app .access-restricted {
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
+.rdcd-app .access-other {
+  background: #F3F4F6;
+  color: #4B5563;
 }
 
 /* More generous result cards */
@@ -1275,22 +1619,41 @@ fluidPage(
   flex-shrink: 0;
 }
 
-/* Responsive */
+/* -------------------------------------------------
+   Sticky sidebar
+   ------------------------------------------------- */
+
+.rdcd-sidebar-column {
+  z-index: 5;
+}
+
 @media (max-width: 900px) {
-
-  .dashboard-summary-card {
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .dashboard-metric {
-    flex: 1 1 40%;
-  }
-
-  .dashboard-metric-divider {
-    display: none;
+  .rdcd-sidebar-column {
+    position: static !important;
+    top: auto !important;
+    z-index: auto;
   }
 }
+
+/* Responsive */
+}
+    ")),
+
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('rdcdToggleSearch', function(disabled) {
+
+        var btn = document.getElementById('run_search');
+        var busy = document.getElementById('search_loading_indicator');
+
+        if (btn) {
+          btn.disabled = disabled;
+        }
+
+        if (busy) {
+          busy.style.display = disabled ? 'block' : 'none';
+        }
+
+      });
     "))
   ),
 
@@ -1335,11 +1698,13 @@ fluidPage(
 uiOutput("dashboard_summary"),
 
       fluidRow(
-  column(
-    width = 4,
+ column(
+  width = 4,
+  class = "rdcd-sidebar-column",
+  style = "position: sticky; top: 18px; align-self: flex-start;",
 
-    div(
-      style = "padding:0; margin:0; background:transparent; border:none; box-shadow:none;",
+  div(
+    style = "padding:0; margin:0; background:transparent; border:none; box-shadow:none;",
 
       div(
         style = paste0(
@@ -1378,10 +1743,28 @@ uiOutput("dashboard_summary"),
         ),
 
         checkboxInput(
-          "use_category_expansion",
-          "Expand search using category keyword dictionary",
-          TRUE
-        )
+  "use_category_expansion",
+  "Expand search using category keyword dictionary",
+  TRUE
+),
+
+actionButton(
+  "run_search",
+  "Run Search",
+  class = "btn-primary",
+  width = "100%"
+),
+
+tags$div(
+  id = "search_loading_indicator",
+  style = "display:none; margin-top:10px; color:#73000A; font-weight:600;",
+  tags$span(
+    class = "spinner-border spinner-border-sm",
+    role = "status",
+    `aria-hidden` = "true"
+  ),
+  " Searching..."
+)
       ),
 
       tags$details(
@@ -1528,60 +1911,52 @@ uiOutput("dashboard_summary"),
   column(
     width = 8,
 
+tabsetPanel(
+  type = "pills",
+
+tabPanel(
+  "Top Matches",
+  uiOutput("results_table_container")
+),
+
+  tabPanel(
+    "Data Source Cards",
+    uiOutput("source_cards")
+  ),
+
+  tabPanel(
+    "Compare Sources",
+    uiOutput("compare_picker"),
+    DT::DTOutput("compare_table")
+  ),
+
+  tabPanel(
+    "Visual Summary",
+    plotOutput("score_plot", height = "420px"),
+    plotOutput("category_plot", height = "420px")
+  ),
+
+  tabPanel(
+    "Data Fit Summary",
     div(
-      class = "rdcd-results-header",
-      h2("Results"),
-      p("Top matches, cards, comparison, and fit summary.")
-    ),
-
-    tabsetPanel(
-      tabPanel(
-        "Top Matches",
-        uiOutput("result_summary"),
-        DT::DTOutput("results_table")
-      ),
-
-      tabPanel(
-        "Data Source Cards",
-        uiOutput("source_cards")
-      ),
-
-      tabPanel(
-        "Compare Sources",
-        uiOutput("compare_picker"),
-        DT::DTOutput("compare_table")
-      ),
-
-      tabPanel(
-        "Visual Summary",
-        plotOutput("score_plot", height = "420px"),
-        plotOutput("category_plot", height = "420px")
-      ),
-
-      tabPanel(
-        "Data Fit Summary",
-        div(
-          class = "fit-summary-shell",
-
-          div(
-            class = "fit-summary-hero",
-            div(class = "fit-summary-kicker", "AI-assisted recommendation"),
-            h3("Data Fit Recommendation"),
-            p(
-              class = "fit-summary-lead",
-              "A concise summary of the best-fit source(s), access path, and next RDCD step."
-            )
-          ),
-
-          uiOutput("fit_summary"),
-
-          div(
-            class = "fit-summary-actions",
-            downloadButton("download_summary", "Download Summary")
-          )
+      class = "fit-summary-shell",
+      div(
+        class = "fit-summary-hero",
+        div(class = "fit-summary-kicker", "AI-assisted recommendation"),
+        h3("Data Fit Recommendation"),
+        p(
+          class = "fit-summary-lead",
+          "A concise summary of the best-fit source(s), access path, and next RDCD step."
         )
+      ),
+      uiOutput("fit_summary"),
+      div(
+        class = "fit-summary-actions",
+        downloadButton("download_summary", "Download Summary")
       )
     )
+  )
+)
   )
 )
     )
@@ -1591,9 +1966,7 @@ uiOutput("dashboard_summary"),
 ```
 
 
-## 5. Server logic
-
-```{r server, context="server"}
+```{r server, context="server", echo=FALSE}
 current_path <- reactive({
   if (!is.null(input$catalog_file)) {
     input$catalog_file$datapath
@@ -1628,23 +2001,91 @@ observe({
 
 
 
-search_terms <- reactive({
-  question_terms <- unique(c(
-    parse_search_terms(input$question),
-    extract_words(input$question)
-  ))
+search_terms <- eventReactive(
+  input$run_search,
+  {
 
-  keyword_terms <- parse_search_terms(input$keyword_string)
+    question_terms <- unique(c(
+      parse_search_terms(input$question),
+      extract_words(input$question)
+    ))
 
-  base_terms <- unique(c(question_terms, keyword_terms))
-  base_terms <- base_terms[nchar(base_terms) >= 2]
+    keyword_terms <- parse_search_terms(
+      input$keyword_string
+    )
 
-  if (isTRUE(input$use_category_expansion)) {
-    expand_terms(base_terms)
-  } else {
-    unique(vapply(base_terms, normalize_search_term, character(1)))
-  }
-})
+    base_terms <- unique(c(
+      question_terms,
+      keyword_terms
+    ))
+
+    base_terms <- base_terms[
+      nchar(base_terms) >= 2
+    ]
+
+    if (isTRUE(input$use_category_expansion)) {
+      expand_terms(base_terms)
+    } else {
+      unique(
+        vapply(
+          base_terms,
+          normalize_search_term,
+          character(1)
+        )
+      )
+    }
+
+  },
+  ignoreNULL = FALSE
+)
+
+
+scored_results <- eventReactive(
+  input$run_search,
+  {
+
+    session$sendCustomMessage(
+      "rdcdToggleSearch",
+      TRUE
+    )
+
+    on.exit(
+      session$sendCustomMessage(
+        "rdcdToggleSearch",
+        FALSE
+      ),
+      add = TRUE
+    )
+
+    withProgress(
+      message = "Searching sources...",
+      value = 0,
+      {
+
+        incProgress(0.3)
+
+        res <- score_catalog(
+          df = processed_catalog(),
+          terms = search_terms(),
+          category_filter = input$category_filter %||% character(),
+          data_type_filter = input$data_type_filter %||% character(),
+          geography_filter = input$geography_filter %||% character(),
+          access_filter = input$access_filter %||% character(),
+          open_only = input$open_only
+        ) |>
+          dplyr::filter(
+            match_score >= input$min_score
+          )
+
+        incProgress(0.7)
+
+        res
+      }
+    )
+
+  },
+  ignoreNULL = FALSE
+)
 
 scored_results <- reactive({
   score_catalog(
@@ -1752,29 +2193,222 @@ output$dashboard_summary <- renderUI({
 
 output$result_summary <- renderUI({
   df <- scored_results()
-  tagList(
-    tags$p(
-      tags$span(class = "metric", nrow(df)), " data sources meet the current criteria. ",
-      tags$span(class = "metric", length(search_terms())), " search terms used."
+  n_matches <- nrow(df)
+
+  active_filters <- c(
+    input$category_filter %||% character(),
+    input$data_type_filter %||% character(),
+    input$geography_filter %||% character(),
+    input$access_filter %||% character()
+  )
+
+  if (isTRUE(input$open_only)) {
+    active_filters <- c(active_filters, "Open/public only")
+  }
+
+  active_filters <- active_filters[nchar(active_filters) > 0]
+
+  filters_text <- if (length(active_filters) > 0) {
+    paste(active_filters, collapse = " • ")
+  } else {
+    "None"
+  }
+
+  div(
+    style = paste0(
+      "display:flex;",
+      "align-items:center;",
+      "gap:16px;",
+      "width:100%;",
+      "margin:14px 0 16px;",
+      "padding:12px 16px;",
+      "background:#F9FAFB;",
+      "border:1px solid #EEF2F7;",
+      "border-radius:12px;",
+      "box-shadow:0 1px 2px rgba(16,24,40,0.03);"
     ),
-    tags$p(class = "small-note", paste("Search terms:", paste(search_terms(), collapse = ", ")))
+
+    div(
+      style = "display:flex; align-items:baseline; gap:7px; flex-shrink:0;",
+      span(
+        style = "font-size:18px; font-weight:800; line-height:1; color:#73000A;",
+        n_matches
+      ),
+      span(
+        style = "font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#4B5563;",
+        "Matches"
+      )
+    ),
+
+    div(
+      style = "width:1px; height:22px; background:#E5E7EB; flex-shrink:0;"
+    ),
+
+    div(
+      style = "display:flex; align-items:center; gap:7px; min-width:0; flex:1;",
+      span(
+        style = "font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#4B5563; flex-shrink:0;",
+        "Filters"
+      ),
+      span(
+        style = "font-size:13px; font-weight:500; color:#6B7280; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;",
+        filters_text
+      )
+    ),
+
+    div(
+      style = "width:1px; height:22px; background:#E5E7EB; flex-shrink:0;"
+    ),
+
+    div(
+      style = "display:flex; align-items:center; gap:7px; flex-shrink:0;",
+      span(
+        style = "font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#4B5563;",
+        "Sorted"
+      ),
+      span(
+        style = "font-size:13px; font-weight:500; color:#6B7280;",
+        "Match score ↓"
+      )
+    )
   )
 })
+
+output$results_context <- renderUI({
+
+  n_matches <- nrow(scored_results())
+
+  active_filters <- c(
+    input$category_filter %||% character(),
+    input$data_type_filter %||% character(),
+    input$geography_filter %||% character(),
+    input$access_filter %||% character()
+  )
+
+  if (isTRUE(input$open_only)) {
+    active_filters <- c(active_filters, "Open/public only")
+  }
+
+  active_filters <- active_filters[nchar(active_filters) > 0]
+
+  filters_text <- if (length(active_filters) > 0) {
+    paste(active_filters, collapse = " • ")
+  } else {
+    "None"
+  }
+
+  div(
+    style = paste0(
+      "display:flex;",
+      "align-items:center;",
+      "gap:16px;",
+      "width:100%;",
+      "margin:14px 0 16px;",
+      "padding:12px 16px;",
+      "background:#F9FAFB;",
+      "border:1px solid #EEF2F7;",
+      "border-radius:12px;",
+      "box-shadow:0 1px 2px rgba(16,24,40,0.03);",
+      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+    ),
+
+    div(
+      style = "display:flex; align-items:baseline; gap:7px; flex-shrink:0;",
+      span(
+        style = "font-size:18px; font-weight:800; line-height:1; color:#73000A;",
+        n_matches
+      ),
+      span(
+        style = "font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#4B5563;",
+        "Matches"
+      )
+    ),
+
+    div(
+      style = "width:1px; height:22px; background:#E5E7EB; flex-shrink:0;"
+    ),
+
+    div(
+  style = "display:flex; align-items:center; gap:7px; min-width:0; flex:1;",
+  span(
+    style = "font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#4B5563; flex-shrink:0;",
+    "Filters"
+  ),
+  span(
+    title = filters_text,
+   style = "font-size:13px; font-weight:500; color:#6B7280; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:default;",
+    filters_text
+  )
+),
+
+    div(
+      style = "width:1px; height:22px; background:#E5E7EB; flex-shrink:0;"
+    ),
+
+    div(
+      style = "display:flex; align-items:center; gap:7px; flex-shrink:0;",
+      span(
+        style = "font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#4B5563;",
+        "Sorted"
+      ),
+      span(
+        style = "font-size:13px; font-weight:500; color:#6B7280;",
+        "Match score ↓"
+      )
+    )
+  )
+})
+
+output$results_table_container <- renderUI({
+
+  # Before the first click, show a neutral prompt instead of "no results"
+  if (is.null(input$run_search) || input$run_search == 0) {
+    return(
+      div(
+        class = "rdcd-start-state",
+        h3("Ready to search"),
+        p("Enter a question or keywords, adjust filters if needed, then click Run Search.")
+      )
+    )
+  }
+
+  df <- scored_results()
+
+  if (nrow(df) == 0) {
+    return(
+      div(
+        class = "rdcd-empty-state",
+
+        h3("No matching sources found"),
+
+        p(
+          "No sources matched these criteria. ",
+          "Try lowering the minimum match score, ",
+          "removing a filter, or broadening your search terms."
+        )
+      )
+    )
+  }
+
+  tagList(
+  uiOutput("results_context"),
+  DT::DTOutput("results_table")
+)
+})
+
 
 output$results_table <- DT::renderDT({
   df <- scored_results() |>
     dplyr::slice_head(n = input$top_n) |>
-    dplyr::mutate(
-      Rank = dplyr::row_number(),
-      link = make_html_link(official_link_text, official_url)
-    ) |>
-    dplyr::select(
-  Rank,
+ dplyr::mutate(
+  score_badge = make_score_badge(match_score),
+  access_badge = make_access_badge(access_level_standardized),
+  link = make_html_link(official_link_text, official_url)
+) |>
+dplyr::select(
   `Data Source` = data_source,
-  `Match Score` = match_score,
-  `Access` = access_level_standardized,
-  `Category` = category_for_filter,
-  `Data Type` = data_type_for_filter,
+  `Match Score` = score_badge,
+  `Access` = access_badge,
   `Official Link` = link
 )
 
@@ -1783,7 +2417,14 @@ output$results_table <- DT::renderDT({
     escape = FALSE,
     rownames = FALSE,
     filter = "top",
-    options = list(pageLength = 10, scrollX = TRUE, autoWidth = TRUE)
+    class = "stripe hover compact",
+    options = list(
+      pageLength = 10,
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      ordering = TRUE,
+      dom = "tip"
+    )
   )
 })
 
@@ -2008,13 +2649,4 @@ output$download_summary <- downloadHandler(
 ```
 
 
-### AI/visualization phase after MVP
 
-After the rule-based prototype works, add:
-
-- Synonym expansion for investigator terms
-- Semantic search over data source narratives
-- Auto-generated "why this matched" text
-- Suggested companion datasets
-- Exportable consultation summary
-- A chart or matrix showing match score, access burden, geography, and data type
