@@ -15,7 +15,8 @@ runtime: shiny
 ```{r setup, include=FALSE}
 required_pkgs <- c(
   "shiny", "bslib", "readxl", "dplyr", "tidyr", "stringr", "purrr",
-  "DT", "ggplot2", "glue", "tibble", "tools"
+  "DT", "ggplot2", "glue", "tibble", "tools",
+  "officer", "flextable"
 )
 
 missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
@@ -773,6 +774,865 @@ make_access_badge <- function(access) {
   })
 }
 
+# ============================================================
+# Word report helpers
+# ============================================================
+
+make_report_score_label <- function(score) {
+
+  score <- as.numeric(score)
+
+  if (is.na(score)) {
+    return("N/A")
+  }
+
+  paste0(round(score), "% match")
+}
+
+
+make_report_access_label <- function(access) {
+
+  access_lower <- tolower(as_text(access))
+
+  if (stringr::str_detect(access_lower, "restricted")) {
+    return("Restricted")
+  }
+
+  if (stringr::str_detect(access_lower, "controlled|credentialed")) {
+    return("Controlled")
+  }
+
+  if (stringr::str_detect(access_lower, "registered")) {
+    return("Registered")
+  }
+
+  if (stringr::str_detect(access_lower, "open|public")) {
+    return("Open")
+  }
+
+  if (nzchar(as_text(access))) {
+    return(as_text(access))
+  }
+
+  "Unknown"
+}
+
+
+report_value <- function(x, fallback = "Not specified") {
+
+  x <- as_text(x)
+
+  if (!nzchar(x)) {
+    fallback
+  } else {
+    x
+  }
+}
+
+
+make_report_tags <- function(row) {
+
+  raw_tags <- c(
+    split_terms(row$primary_category),
+    split_terms(row$secondary_categories_tags),
+    split_terms(row$data_type_for_filter),
+    split_terms(row$geography_coverage)
+  )
+
+  tags_vec <- unique(
+    raw_tags[nchar(raw_tags) > 0]
+  )
+
+  tags_vec <- head(tags_vec, 8)
+
+  if (length(tags_vec) == 0) {
+    return("None specified")
+  }
+
+  paste(tags_vec, collapse = "  |  ")
+}
+
+
+add_report_heading <- function(doc, text) {
+
+  doc <- officer::body_add_par(
+    doc,
+    text,
+    style = "heading 1"
+  )
+
+  doc
+}
+
+
+add_report_source <- function(doc, row, rank_number) {
+
+  # ----------------------------------------------------------
+  # Source heading
+  # ----------------------------------------------------------
+
+  source_title <- paste0(
+    rank_number,
+    ". ",
+    as_text(row$data_source)
+  )
+
+  doc <- officer::body_add_par(
+    doc,
+    source_title,
+    style = "heading 2"
+  )
+
+  # ----------------------------------------------------------
+  # Match / access line
+  # ----------------------------------------------------------
+
+  match_text <- make_report_score_label(row$match_score)
+
+  access_text <- make_report_access_label(
+    row$access_level_standardized
+  )
+
+  meta <- paste0(
+    match_text,
+    "   |   ",
+    access_text
+  )
+
+  meta_fp <- officer::fpar(
+    officer::ftext(
+      meta,
+      prop = officer::fp_text(
+        bold = TRUE,
+        color = "73000A",
+        font.size = 10
+      )
+    )
+  )
+
+  doc <- officer::body_add_fpar(
+    doc,
+    meta_fp
+  )
+
+  # ----------------------------------------------------------
+  # Summary
+  # ----------------------------------------------------------
+
+  summary_text <- report_value(
+    row$main_data_type_use
+  )
+
+  if (
+    !nzchar(as_text(row$main_data_type_use))
+  ) {
+    summary_text <- report_value(
+      row$suggested_use_cases
+    )
+  }
+
+  doc <- officer::body_add_par(
+    doc,
+    "Summary",
+    style = "heading 3"
+  )
+
+  doc <- officer::body_add_par(
+    doc,
+    summary_text
+  )
+
+  # ----------------------------------------------------------
+  # Key details table
+  # ----------------------------------------------------------
+
+  detail_df <- data.frame(
+    Field = c(
+      "Tags",
+      "Category",
+      "Data Type",
+      "Population",
+      "Geography",
+      "Unit of Analysis",
+      "Years Available",
+      "Access Burden",
+      "Linkage Potential",
+      "South Carolina Relevance"
+    ),
+
+    Value = c(
+      make_report_tags(row),
+      report_value(row$category_for_filter),
+      report_value(row$data_type_for_filter),
+      report_value(row$population),
+      report_value(row$geography_coverage),
+      report_value(row$unit_of_analysis),
+      report_value(row$years_available),
+      report_value(row$access_burden_for_filter),
+      report_value(row$linkage_potential),
+      report_value(row$south_carolina_relevance)
+    ),
+
+    stringsAsFactors = FALSE
+  )
+
+  ft <- flextable::flextable(detail_df)
+
+  ft <- flextable::theme_booktabs(ft)
+
+  ft <- flextable::fontsize(
+    ft,
+    size = 9.5,
+    part = "all"
+  )
+
+  ft <- flextable::bold(
+    ft,
+    j = 1,
+    bold = TRUE,
+    part = "body"
+  )
+
+  ft <- flextable::color(
+    ft,
+    j = 1,
+    color = "5B0008",
+    part = "body"
+  )
+
+  ft <- flextable::bg(
+    ft,
+    j = 1,
+    bg = "F8F1F2",
+    part = "body"
+  )
+
+  ft <- flextable::padding(
+    ft,
+    padding.top = 6,
+    padding.bottom = 6,
+    padding.left = 7,
+    padding.right = 7,
+    part = "all"
+  )
+
+  ft <- flextable::width(
+    ft,
+    j = 1,
+    width = 1.55
+  )
+
+  ft <- flextable::width(
+    ft,
+    j = 2,
+    width = 5.15
+  )
+
+  ft <- flextable::set_table_properties(
+    ft,
+    layout = "fixed",
+    width = 1
+  )
+
+  ft <- flextable::align(
+    ft,
+    j = 1,
+    align = "left",
+    part = "all"
+  )
+
+  ft <- flextable::align(
+    ft,
+    j = 2,
+    align = "left",
+    part = "all"
+  )
+
+  doc <- officer::body_add_flextable(
+    doc,
+    ft
+  )
+
+  # ----------------------------------------------------------
+  # Why it matched
+  # ----------------------------------------------------------
+
+  doc <- officer::body_add_par(
+    doc,
+    "Why it matched",
+    style = "heading 3"
+  )
+
+  why_text <- report_value(
+    row$why_matched
+  )
+
+  doc <- officer::body_add_par(
+    doc,
+    why_text
+  )
+
+  # ----------------------------------------------------------
+  # Limitations
+  # ----------------------------------------------------------
+
+  limitations <- as_text(
+    row$limitations_cautions
+  )
+
+  if (nzchar(limitations)) {
+
+    doc <- officer::body_add_par(
+      doc,
+      "Limitations",
+      style = "heading 3"
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      limitations
+    )
+  }
+
+  # ----------------------------------------------------------
+  # Official source
+  # ----------------------------------------------------------
+
+  official_url <- as_text(
+    row$official_url
+  )
+
+  if (nzchar(official_url)) {
+
+    doc <- officer::body_add_par(
+      doc,
+      "Official source",
+      style = "heading 3"
+    )
+
+    link_fp <- officer::fpar(
+      officer::hyperlink_ftext(
+        x = "Open official source",
+        url = official_url,
+        prop = officer::fp_text(
+          color = "73000A",
+          underline = TRUE,
+          font.size = 10
+        )
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      link_fp
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      official_url
+    )
+  }
+
+  # ----------------------------------------------------------
+  # Space before next source
+  # ----------------------------------------------------------
+
+  doc <- officer::body_add_par(
+    doc,
+    ""
+  )
+
+  doc
+}
+
+# ============================================================
+# Word report styling helpers
+# ============================================================
+
+add_report_title <- function(doc, title, subtitle = NULL) {
+
+  title_fp <- officer::fpar(
+    officer::ftext(
+      title,
+      prop = officer::fp_text(
+        bold = TRUE,
+        color = "73000A",
+        font.size = 22
+      )
+    ),
+    fp_p = officer::fp_par(
+      space_after = 6
+    )
+  )
+
+  doc <- officer::body_add_fpar(
+    doc,
+    title_fp
+  )
+
+  if (!is.null(subtitle) && nzchar(subtitle)) {
+
+    subtitle_fp <- officer::fpar(
+      officer::ftext(
+        subtitle,
+        prop = officer::fp_text(
+          color = "6B7280",
+          font.size = 12
+        )
+      ),
+      fp_p = officer::fp_par(
+        space_after = 4
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      subtitle_fp
+    )
+  }
+
+  doc
+}
+
+
+add_report_section_heading <- function(doc, text) {
+
+  heading_fp <- officer::fpar(
+    officer::ftext(
+      text,
+      prop = officer::fp_text(
+        bold = TRUE,
+        color = "73000A",
+        font.size = 15
+      )
+    ),
+    fp_p = officer::fp_par(
+      space_before = 12,
+      space_after = 6
+    )
+  )
+
+  officer::body_add_fpar(
+    doc,
+    heading_fp
+  )
+}
+
+
+add_report_subheading <- function(doc, text) {
+
+  heading_fp <- officer::fpar(
+    officer::ftext(
+      text,
+      prop = officer::fp_text(
+        bold = TRUE,
+        color = "1F2937",
+        font.size = 11
+      )
+    ),
+    fp_p = officer::fp_par(
+      space_before = 8,
+      space_after = 3
+    )
+  )
+
+  officer::body_add_fpar(
+    doc,
+    heading_fp
+  )
+}
+
+
+add_report_label_value <- function(
+  doc,
+  label,
+  value,
+  label_color = "5B0008"
+) {
+
+  value <- report_value(value)
+
+  fp <- officer::fpar(
+    officer::ftext(
+      paste0(label, ": "),
+      prop = officer::fp_text(
+        bold = TRUE,
+        color = label_color,
+        font.size = 10
+      )
+    ),
+    officer::ftext(
+      value,
+      prop = officer::fp_text(
+        color = "374151",
+        font.size = 10
+      )
+    ),
+    fp_p = officer::fp_par(
+      space_after = 3
+    )
+  )
+
+  officer::body_add_fpar(
+    doc,
+    fp
+  )
+}
+
+
+add_report_badge_line <- function(
+  doc,
+  score,
+  access
+) {
+
+  score_text <- make_report_score_label(score)
+  access_text <- make_report_access_label(access)
+
+  fp <- officer::fpar(
+    officer::ftext(
+      score_text,
+      prop = officer::fp_text(
+        bold = TRUE,
+        color = "166534",
+        font.size = 10
+      )
+    ),
+    officer::ftext(
+      "   |   ",
+      prop = officer::fp_text(
+        color = "9CA3AF",
+        font.size = 10
+      )
+    ),
+    officer::ftext(
+      access_text,
+      prop = officer::fp_text(
+        bold = TRUE,
+        color = "73000A",
+        font.size = 10
+      )
+    ),
+    fp_p = officer::fp_par(
+      space_after = 7
+    )
+  )
+
+  officer::body_add_fpar(
+    doc,
+    fp
+  )
+}
+
+
+add_report_hyperlink <- function(
+  doc,
+  text,
+  url
+) {
+
+  url <- as_text(url)
+
+  if (!nzchar(url)) {
+    return(doc)
+  }
+
+  fp <- officer::fpar(
+    officer::hyperlink_ftext(
+      x = text,
+      url = url,
+      prop = officer::fp_text(
+        color = "73000A",
+        underline = TRUE,
+        font.size = 10
+      )
+    ),
+    fp_p = officer::fp_par(
+      space_after = 8
+    )
+  )
+
+  officer::body_add_fpar(
+    doc,
+    fp
+  )
+}
+
+
+add_report_source_card <- function(
+  doc,
+  row,
+  rank_number,
+  total_sources
+) {
+
+  # ----------------------------------------------------------
+  # Source title
+  # ----------------------------------------------------------
+
+  source_title <- paste0(
+    rank_number,
+    ". ",
+    as_text(row$data_source)
+  )
+
+  doc <- officer::body_add_fpar(
+    doc,
+    officer::fpar(
+      officer::ftext(
+        source_title,
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "1F2937",
+          font.size = 14
+        )
+      ),
+      fp_p = officer::fp_par(
+        keep_with_next = TRUE,
+        space_before = 12,
+        space_after = 4
+      )
+    )
+  )
+
+  # ----------------------------------------------------------
+  # Score + access
+  # ----------------------------------------------------------
+
+  doc <- add_report_badge_line(
+    doc,
+    row$match_score,
+    row$access_level_standardized
+  )
+
+  # ----------------------------------------------------------
+  # Summary
+  # ----------------------------------------------------------
+
+  doc <- add_report_subheading(
+    doc,
+    "Summary"
+  )
+
+  summary_text <- as_text(
+    row$main_data_type_use
+  )
+
+  if (!nzchar(summary_text)) {
+    summary_text <- as_text(
+      row$suggested_use_cases
+    )
+  }
+
+  if (!nzchar(summary_text)) {
+    summary_text <- "No summary is available for this source."
+  }
+
+  doc <- officer::body_add_par(
+    doc,
+    summary_text,
+    fp_p = officer::fp_par(
+      space_after = 6
+    )
+  )
+
+  # ----------------------------------------------------------
+  # Tags
+  # ----------------------------------------------------------
+
+  doc <- add_report_subheading(
+    doc,
+    "Tags"
+  )
+
+  doc <- officer::body_add_par(
+    doc,
+    make_report_tags(row),
+    fp_p = officer::fp_par(
+      space_after = 6
+    )
+  )
+
+  # ----------------------------------------------------------
+  # Key details
+  # ----------------------------------------------------------
+
+  doc <- add_report_subheading(
+    doc,
+    "Key Details"
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Category",
+    row$category_for_filter
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Data Type",
+    row$data_type_for_filter
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Population",
+    row$population
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Geography",
+    row$geography_coverage
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Unit of Analysis",
+    row$unit_of_analysis
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Years Available",
+    row$years_available
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Access Burden",
+    row$access_burden_for_filter
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "Linkage Potential",
+    row$linkage_potential
+  )
+
+  doc <- add_report_label_value(
+    doc,
+    "South Carolina Relevance",
+    row$south_carolina_relevance
+  )
+
+  # ----------------------------------------------------------
+  # Why matched
+  # ----------------------------------------------------------
+
+  doc <- add_report_subheading(
+    doc,
+    "Why It Matched"
+  )
+
+  doc <- officer::body_add_par(
+    doc,
+    report_value(row$why_matched),
+    fp_p = officer::fp_par(
+      space_after = 6
+    )
+  )
+
+  # ----------------------------------------------------------
+  # Limitations
+  # ----------------------------------------------------------
+
+  limitations <- as_text(
+    row$limitations_cautions
+  )
+
+  if (nzchar(limitations)) {
+
+    doc <- add_report_subheading(
+      doc,
+      "Limitations"
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      limitations,
+      fp_p = officer::fp_par(
+        space_after = 6
+      )
+    )
+  }
+
+  # ----------------------------------------------------------
+  # Official source
+  # ----------------------------------------------------------
+
+  official_url <- as_text(
+    row$official_url
+  )
+
+  if (nzchar(official_url)) {
+
+    doc <- add_report_subheading(
+      doc,
+      "Official Source"
+    )
+
+    doc <- add_report_hyperlink(
+      doc,
+      "Open official source",
+      official_url
+    )
+  }
+
+  # ----------------------------------------------------------
+  # Keep source sections visually separated
+  # ----------------------------------------------------------
+
+  if (rank_number < total_sources) {
+
+    doc <- officer::body_add_par(
+      doc,
+      "",
+      fp_p = officer::fp_par(
+        space_after = 8
+      )
+    )
+  }
+
+  # Every third source starts a new page.
+  # This avoids a report with too many tiny page breaks.
+  if (
+    rank_number < total_sources &&
+    rank_number %% 3 == 0
+  ) {
+
+    doc <- officer::body_add_break(
+      doc,
+      pos = "after"
+    )
+  }
+
+  doc
+}
+
+make_access_label <- function(access) {
+
+  access_lower <- tolower(as_text(access))
+
+  if (stringr::str_detect(access_lower, "restricted")) {
+    return("Restricted")
+  }
+
+  if (stringr::str_detect(access_lower, "controlled|credentialed")) {
+    return("Controlled")
+  }
+
+  if (stringr::str_detect(access_lower, "registered")) {
+    return("Registered")
+  }
+
+  if (stringr::str_detect(access_lower, "open|public")) {
+    return("Open")
+  }
+
+  ifelse(nzchar(access), access, "Unknown")
+}
+
 make_limitations_tooltip <- function(x) {
   x <- as_text(x)
 
@@ -1021,6 +1881,27 @@ fluidPage(
   border-radius: 10px;
 }
 
+@media (max-width: 900px) {
+
+  .rdcd-app .visual-summary-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+}
+
+/* Extra breathing room for visually heavier tabs */
+.rdcd-app .rdcd-special-tab {
+  padding-top: 28px;
+}
+
+.rdcd-app .rdcd-special-tab .fit-summary-shell {
+  margin-top: 0 !important;
+}
+
+.rdcd-app .rdcd-special-tab .plotOutput {
+  margin-top: 0;
+}
+
       /* -------------------------------------------------
    Header banner
    ------------------------------------------------- */
@@ -1140,7 +2021,7 @@ fluidPage(
   flex-wrap: wrap;
   gap: 10px;
   border-bottom: 1px solid #E5E7EB;
-  padding-bottom: 10px;
+  padding-bottom: 14px;
   margin-bottom: 0;
 }
 
@@ -1185,18 +2066,170 @@ fluidPage(
   outline-offset: 2px;
 }
 
+/* -------------------------------------------------
+   Space between tab navigation and tab content
+   ------------------------------------------------- */
+
 .rdcd-app .tab-content {
-  padding-top: 20px !important;
+  padding-top: 0 !important;
 }
-      .data-card {
-        background: #FFFFFF;
-        border: 1px solid #EEF2F7;
-        border-left: 4px solid #73000A;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 12px;
-        box-shadow: none;
-      }
+
+.rdcd-app .tab-content > .tab-pane {
+  padding-top: 28px !important;
+}
+
+/* Keep the first major content element from
+   immediately touching the tab area */
+.rdcd-app .tab-content > .tab-pane.active {
+  padding-top: 28px !important;
+}
+      /* -------------------------------------------------
+   Data Source Cards
+   ------------------------------------------------- */
+
+.rdcd-source-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.rdcd-source-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 6px 18px rgba(16, 24, 40, 0.05);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.rdcd-source-card:hover {
+  transform: translateY(-2px);
+  border-color: #D8C7C9;
+  box-shadow:
+    0 2px 4px rgba(16, 24, 40, 0.06),
+    0 10px 24px rgba(16, 24, 40, 0.08);
+}
+
+.rdcd-source-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.rdcd-source-card-title {
+  min-width: 0;
+  margin: 0;
+  color: #1F2937;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.rdcd-source-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.rdcd-source-card-label {
+  margin: 0 0 5px 0;
+  color: #6B7280;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.rdcd-source-card-summary {
+  margin: 0;
+  color: #4B5563;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.rdcd-source-card-section {
+  margin-top: 16px;
+}
+
+.rdcd-source-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.rdcd-source-card-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #F8F1F2;
+  border: 1px solid #E5D3D5;
+  color: #73000A;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.rdcd-source-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.rdcd-source-card-link {
+  color: #73000A;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.rdcd-source-card-link:hover {
+  color: #5B0008;
+  text-decoration: underline;
+}
+
+/* Stack cards on smaller screens */
+@media (max-width: 900px) {
+  .rdcd-source-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .rdcd-source-card {
+    padding: 16px;
+  }
+
+  .rdcd-source-card-header {
+    flex-direction: column;
+  }
+}
+
+/* -------------------------------------------------
+   Side-by-side source comparison
+   ------------------------------------------------- */
+
+.rdcd-app .compare-sources-note {
+  color: #6B7280;
+  font-size: 13px;
+  margin-top: 6px;
+}
 
       .small-note {
         font-size: 90%;
@@ -1377,8 +2410,22 @@ fluidPage(
 }
 
 /* More space between tabs and their content */
+/* -------------------------------------------------
+   Space between tab navigation and tab content
+   ------------------------------------------------- */
+
 .rdcd-app .tab-content {
-  padding-top: 20px !important;
+  padding-top: 0 !important;
+}
+
+.rdcd-app .tab-content > .tab-pane {
+  padding-top: 28px !important;
+}
+
+/* Keep the first major content element from
+   immediately touching the tab area */
+.rdcd-app .tab-content > .tab-pane.active {
+  padding-top: 28px !important;
 }
 
 .rdcd-start-state {
@@ -1921,59 +2968,100 @@ tags$div(
         )
       ),
 
-      div(
-        style = paste0(
-          "background:#FFFFFF;",
-          "border:1px solid #E5E7EB;",
-          "border-radius:14px;",
-          "padding:18px 18px 14px;",
-          "margin-bottom:18px;",
-          "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
-        ),
+     # ============================================================
+# ACTIONS
+# ============================================================
 
-        div(
-          style = paste0(
-            "margin:0 0 14px 0;",
-            "font-size:12px;",
-            "font-weight:800;",
-            "letter-spacing:0.06em;",
-            "text-transform:uppercase;",
-            "color:#73000A;"
-          ),
-          "Actions"
-        ),
+tags$details(
+  style = paste0(
+    "background:#FFFFFF;",
+    "border:1px solid #E5E7EB;",
+    "border-radius:14px;",
+    "padding:18px;",
+    "margin:0 0 18px 0;",
+    "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
+  ),
 
-        downloadButton("download_results", "Download Results")
-      ),
+  tags$summary(
+    style = paste0(
+      "margin:0;",
+      "font-size:12px;",
+      "font-weight:800;",
+      "letter-spacing:0.06em;",
+      "text-transform:uppercase;",
+      "color:#73000A;",
+      "cursor:pointer;"
+    ),
+    "Actions"
+  ),
 
-      div(
-        style = paste0(
-          "background:#FFFFFF;",
-          "border:1px solid #E5E7EB;",
-          "border-radius:14px;",
-          "padding:18px 18px 14px;",
-          "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
-        ),
+  div(
+    class = "rdcd-details-body",
+    style = "margin-top:18px;",
 
-        div(
-          style = paste0(
-            "margin:0 0 14px 0;",
-            "font-size:12px;",
-            "font-weight:800;",
-            "letter-spacing:0.06em;",
-            "text-transform:uppercase;",
-            "color:#73000A;"
-          ),
-          "Workbook"
-        ),
+    downloadButton(
+      "download_results",
+      "Download Results Report",
+      class = "btn-primary",
+      width = "100%"
+    ),
 
-        fileInput("catalog_file", "Upload workbook", accept = c(".xlsx")),
+    tags$div(
+      style = "height:8px;"
+    ),
 
-        p(
-          class = "small-note",
-          "Upload a completed Data Source Preparation workbook or use the default workbook."
-        )
-      )
+    downloadButton(
+      "download_raw_results",
+      "Download Raw Results",
+      class = "btn-default",
+      width = "100%"
+    ),
+
+    tags$p(
+      class = "small-note",
+      style = "margin-top:10px;",
+      "Results Report is formatted for review and sharing. Raw Results provides the underlying data."
+    )
+  )
+),
+
+# ============================================================
+# WORKBOOK
+# ============================================================
+
+div(
+  style = paste0(
+    "background:#FFFFFF;",
+    "border:1px solid #E5E7EB;",
+    "border-radius:14px;",
+    "padding:18px;",
+    "margin:0 0 18px 0;",
+    "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
+  ),
+
+  div(
+    style = paste0(
+      "margin:0 0 14px 0;",
+      "font-size:12px;",
+      "font-weight:800;",
+      "letter-spacing:0.06em;",
+      "text-transform:uppercase;",
+      "color:#73000A;"
+    ),
+    "Workbook"
+  ),
+
+  fileInput(
+    "catalog_file",
+    "Upload workbook",
+    accept = c(".xlsx")
+  ),
+
+  p(
+    class = "small-note",
+    "Upload a completed Data Source Preparation workbook or use the default workbook."
+  )
+)
     )
   ),
 
@@ -1993,38 +3081,129 @@ tabPanel(
     uiOutput("source_cards")
   ),
 
-  tabPanel(
-    "Compare Sources",
-    uiOutput("compare_picker"),
-    DT::DTOutput("compare_table")
+ tabPanel(
+  "Compare Sources",
+
+  uiOutput("compare_picker"),
+
+  div(
+    style = "margin-top:18px;",
+    uiOutput("compare_view")
+  )
+),
+
+tabPanel(
+  "Visual Summary",
+  
+  # Guaranteed space below the tabs
+  div(
+    style = "height:28px;"
   ),
 
-  tabPanel(
-    "Visual Summary",
-    plotOutput("score_plot", height = "420px"),
-    plotOutput("category_plot", height = "420px")
-  ),
+  div(
+    class = "rdcd-special-tab",
 
-  tabPanel(
-    "Data Fit Summary",
+    uiOutput("visual_summary_tiles"),
+
+    # Match Scores
     div(
-      class = "fit-summary-shell",
-      div(
-        class = "fit-summary-hero",
-        div(class = "fit-summary-kicker", "AI-assisted recommendation"),
-        h3("Data Fit Recommendation"),
-        p(
-          class = "fit-summary-lead",
-          "A concise summary of the best-fit source(s), access path, and next RDCD step."
-        )
+      style = paste0(
+        "margin-top:22px;",
+        "background:#FFFFFF;",
+        "border:1px solid #E5E7EB;",
+        "border-radius:14px;",
+        "padding:22px;"
       ),
-      uiOutput("fit_summary"),
-      div(
-        class = "fit-summary-actions",
-        downloadButton("download_summary", "Download Summary")
+
+      tags$div(
+        style = paste0(
+          "font-size:15px;",
+          "font-weight:800;",
+          "color:#1F2937;",
+          "margin-bottom:10px;"
+        ),
+        "Match Scores"
+      ),
+
+      tags$div(
+        style = paste0(
+          "font-size:12px;",
+          "color:#6B7280;",
+          "margin-bottom:14px;"
+        ),
+        "Highest-ranked data sources by match score."
+      ),
+
+      plotOutput(
+        "score_plot",
+        height = "460px"
+      )
+    ),
+
+    # Top Categories
+    div(
+      style = paste0(
+        "margin-top:20px;",
+        "background:#FFFFFF;",
+        "border:1px solid #E5E7EB;",
+        "border-radius:14px;",
+        "padding:22px;"
+      ),
+
+      tags$div(
+        style = paste0(
+          "font-size:15px;",
+          "font-weight:800;",
+          "color:#1F2937;",
+          "margin-bottom:10px;"
+        ),
+        "Top Categories"
+      ),
+
+      tags$div(
+        style = paste0(
+          "font-size:12px;",
+          "color:#6B7280;",
+          "margin-bottom:14px;"
+        ),
+        "Most common categories among the current matching sources."
+      ),
+
+      plotOutput(
+        "category_plot",
+        height = "420px"
       )
     )
   )
+),
+
+tabPanel(
+  "Data Fit Summary",
+  
+  # Guaranteed space below the tabs
+  div(
+    style = "height:28px;"
+  ),
+
+  div(
+    class = "rdcd-special-tab",
+
+    uiOutput("fit_summary"),
+
+    div(
+      style = paste0(
+        "margin-top:18px;",
+        "display:flex;",
+        "justify-content:flex-end;"
+      ),
+
+      downloadButton(
+        "download_summary",
+        "Download Summary"
+      )
+    )
+  )
+)
 )
   )
 )
@@ -2498,221 +3677,2835 @@ dplyr::select(
 })
 
 output$source_cards <- renderUI({
-  df <- scored_results() |> dplyr::slice_head(n = min(10, input$top_n))
-  if (nrow(df) == 0) return(tags$p("No data sources meet the current criteria."))
 
-  tagList(purrr::map(seq_len(nrow(df)), function(i) {
+  df <- scored_results() |>
+    dplyr::slice_head(n = min(10, input$top_n))
+
+  if (nrow(df) == 0) {
+    return(
+      tags$div(
+        style = paste(
+          "padding:40px;",
+          "text-align:center;",
+          "background:#FFFFFF;",
+          "border:1px solid #E5E7EB;",
+          "border-radius:14px;"
+        ),
+        tags$h3("No matching sources"),
+        tags$p("No data sources meet the current criteria.")
+      )
+    )
+  }
+
+  cards <- purrr::map(seq_len(nrow(df)), function(i) {
+
     row <- df[i, ]
 
+    # -----------------------------
+    # Summary
+    # -----------------------------
+    summary_text <- as_text(row$main_data_type_use)
+
+    if (!nzchar(summary_text)) {
+      summary_text <- as_text(row$suggested_use_cases)
+    }
+
+    if (!nzchar(summary_text)) {
+      summary_text <- "No summary is available for this source."
+    }
+
+    if (nchar(summary_text) > 240) {
+      summary_text <- paste0(substr(summary_text, 1, 237), "...")
+    }
+
+    # -----------------------------
+    # Tags
+    # -----------------------------
+    raw_tags <- c(
+      split_terms(row$primary_category),
+      split_terms(row$secondary_categories_tags),
+      split_terms(row$data_type_for_filter),
+      split_terms(row$geography_coverage)
+    )
+
+    tags_vec <- unique(raw_tags[nchar(raw_tags) > 0])
+    tags_vec <- head(tags_vec, 8)
+
+    tag_html <- if (length(tags_vec) > 0) {
+
+      purrr::map(
+        tags_vec,
+        function(tag) {
+          tags$span(
+            style = paste(
+              "display:inline-block;",
+              "padding:5px 9px;",
+              "margin:0 5px 5px 0;",
+              "border-radius:999px;",
+              "background:#F8F1F2;",
+              "border:1px solid #E5D3D5;",
+              "color:#73000A;",
+              "font-size:11px;",
+              "font-weight:700;"
+            ),
+            tag
+          )
+        }
+      )
+
+    } else {
+
+      list(
+        tags$span(
+          style = "color:#6B7280;font-size:12px;",
+          "No tags available."
+        )
+      )
+    }
+
+    # -----------------------------
+    # Score styling
+    # -----------------------------
+    score <- as.numeric(row$match_score)
+
+    score_bg <- if (is.na(score)) {
+      "#F3F4F6"
+    } else if (score >= 70) {
+      "#DCFCE7"
+    } else if (score >= 40) {
+      "#FEF3C7"
+    } else {
+      "#FEE2E2"
+    }
+
+    score_fg <- if (is.na(score)) {
+      "#4B5563"
+    } else if (score >= 70) {
+      "#166534"
+    } else if (score >= 40) {
+      "#92400E"
+    } else {
+      "#991B1B"
+    }
+
+    # -----------------------------
+    # Access styling
+    # -----------------------------
+    access <- tolower(as_text(row$access_level_standardized))
+
+    if (stringr::str_detect(access, "restricted")) {
+
+      access_label <- "Restricted"
+      access_bg <- "#FEE2E2"
+      access_fg <- "#991B1B"
+
+    } else if (stringr::str_detect(access, "controlled|credentialed")) {
+
+      access_label <- "Controlled"
+      access_bg <- "#FEF3C7"
+      access_fg <- "#92400E"
+
+    } else if (stringr::str_detect(access, "registered")) {
+
+      access_label <- "Registered"
+      access_bg <- "#E0F2FE"
+      access_fg <- "#075985"
+
+    } else if (stringr::str_detect(access, "open|public")) {
+
+      access_label <- "Open"
+      access_bg <- "#DCFCE7"
+      access_fg <- "#166534"
+
+    } else {
+
+      access_label <- "Unknown"
+      access_bg <- "#F3F4F6"
+      access_fg <- "#4B5563"
+    }
+
+    # -----------------------------
+    # Official link
+    # -----------------------------
+    official_link <- if (
+      !is.na(row$official_url) &&
+      nchar(row$official_url) > 0
+    ) {
+
+      tags$a(
+        href = row$official_url,
+        target = "_blank",
+        rel = "noopener noreferrer",
+        style = paste(
+          "color:#73000A;",
+          "font-size:13px;",
+          "font-weight:700;",
+          "text-decoration:none;"
+        ),
+        "Open official source"
+      )
+
+    } else {
+
+      tags$span(
+        style = "color:#6B7280;font-size:12px;",
+        "No official link provided"
+      )
+    }
+
+    # -----------------------------
+    # CARD
+    # -----------------------------
     tags$div(
-      class = "data-card",
-
-      tags$h4(paste0(i, ". ", row$data_source, " - ", row$match_score, "% match")),
-
-      tags$p(
-        tags$b("Access: "), row$access_level_standardized,
-        " | ",
-        tags$b("Burden: "), row$access_burden_for_filter
+      style = paste(
+        "background:#FFFFFF;",
+        "border:1px solid #E5E7EB;",
+        "border-radius:14px;",
+        "padding:20px;",
+        "box-shadow:0 2px 8px rgba(31,41,55,0.06);",
+        "display:flex;",
+        "flex-direction:column;",
+        "min-width:0;",
+        "height:100%;"
       ),
 
-      tags$p(tags$b("Category: "), row$category_for_filter),
-      tags$p(tags$b("Data type: "), row$data_type_for_filter),
-      tags$p(tags$b("Main use: "), row$main_data_type_use),
+      # Header
+      tags$div(
+        style = paste(
+          "display:flex;",
+          "justify-content:space-between;",
+          "align-items:flex-start;",
+          "gap:12px;",
+          "margin-bottom:16px;"
+        ),
 
-      tags$details(
-        class = "rdcd-details",
-        tags$summary("Why it matched"),
-        div(
-          class = "rdcd-details-body",
-          tags$p(row$why_matched)
+        tags$h4(
+          style = paste(
+            "margin:0;",
+            "font-size:18px;",
+            "font-weight:800;",
+            "line-height:1.3;",
+            "color:#1F2937;"
+          ),
+          row$data_source
+        ),
+
+        tags$div(
+          style = paste(
+            "display:flex;",
+            "gap:6px;",
+            "align-items:center;",
+            "flex-wrap:wrap;",
+            "justify-content:flex-end;"
+          ),
+
+          # Match score
+          tags$span(
+            style = paste(
+              "display:inline-flex;",
+              "align-items:center;",
+              "padding:5px 9px;",
+              "border-radius:999px;",
+              "background:", score_bg, ";",
+              "color:", score_fg, ";",
+              "font-size:12px;",
+              "font-weight:700;",
+              "white-space:nowrap;"
+            ),
+            if (is.na(score)) "N/A" else paste0(round(score), "% match")
+          ),
+
+          # Access
+          tags$span(
+            style = paste(
+              "display:inline-flex;",
+              "align-items:center;",
+              "padding:5px 9px;",
+              "border-radius:999px;",
+              "background:", access_bg, ";",
+              "color:", access_fg, ";",
+              "font-size:12px;",
+              "font-weight:700;",
+              "white-space:nowrap;"
+            ),
+            access_label
+          )
         )
       ),
 
-      if (!is.na(row$official_url) && nchar(row$official_url) > 0) {
-        tags$a(href = row$official_url, target = "_blank", "Open official source")
-      } else {
-        tags$span(class = "small-note", "No URL provided in the source file.")
-      }
+      # Summary
+      tags$div(
+        style = "margin-bottom:16px;",
+
+        tags$div(
+          style = paste(
+            "font-size:11px;",
+            "font-weight:800;",
+            "text-transform:uppercase;",
+            "letter-spacing:0.05em;",
+            "color:#6B7280;",
+            "margin-bottom:5px;"
+          ),
+          "Summary"
+        ),
+
+        tags$p(
+          style = paste(
+            "margin:0;",
+            "font-size:14px;",
+            "line-height:1.6;",
+            "color:#4B5563;"
+          ),
+          summary_text
+        )
+      ),
+
+      # Tags
+      tags$div(
+        style = "margin-bottom:18px;",
+
+        tags$div(
+          style = paste(
+            "font-size:11px;",
+            "font-weight:800;",
+            "text-transform:uppercase;",
+            "letter-spacing:0.05em;",
+            "color:#6B7280;",
+            "margin-bottom:7px;"
+          ),
+          "Tags"
+        ),
+
+        tags$div(
+          tag_html
+        )
+      ),
+
+      # Footer
+      tags$div(
+        style = paste(
+          "margin-top:auto;",
+          "padding-top:14px;",
+          "border-top:1px solid #EEF2F7;"
+        ),
+        official_link
+      )
     )
-  }))
+  })
+
+  # -----------------------------
+  # 2-column card grid
+  # -----------------------------
+  tags$div(
+    style = paste(
+      "display:grid;",
+      "grid-template-columns:repeat(2,minmax(0,1fr));",
+      "gap:18px;",
+      "margin-top:18px;"
+    ),
+    cards
+  )
 })
 
 output$compare_picker <- renderUI({
+
   df <- scored_results()
+
   selectizeInput(
     "compare_sources",
     "Choose 2-5 sources to compare",
     choices = df$data_source,
-    selected = head(df$data_source, 3),
-    multiple = TRUE
+    selected = head(df$data_source, min(3, nrow(df))),
+    multiple = TRUE,
+
+    options = list(
+      placeholder = "Select sources to compare",
+      maxItems = 5
+    )
   )
 })
 
-output$compare_table <- DT::renderDT({
+output$compare_view <- renderUI({
+
   selected <- input$compare_sources %||% character()
 
-  validate(
-    need(
-      length(selected) >= 2,
-      "Choose at least two sources to compare."
+  # -------------------------------------------------
+  # Validation
+  # -------------------------------------------------
+
+  if (length(selected) < 2) {
+
+    return(
+      tags$div(
+        style = paste0(
+          "padding:32px;",
+          "text-align:center;",
+          "background:#FFFFFF;",
+          "border:1px solid #E5E7EB;",
+          "border-radius:14px;",
+          "color:#6B7280;"
+        ),
+
+        tags$h4(
+          style = "margin:0 0 8px;color:#1F2937;",
+          "Choose at least two sources"
+        ),
+
+        tags$p(
+          style = "margin:0;",
+          "Select 2-5 sources above to compare them side-by-side."
+        )
+      )
+    )
+  }
+
+  if (length(selected) > 5) {
+
+    return(
+      tags$div(
+        style = paste0(
+          "padding:24px;",
+          "background:#FEF3C7;",
+          "border:1px solid #FDE68A;",
+          "border-radius:12px;",
+          "color:#92400E;",
+          "font-weight:600;"
+        ),
+        "Choose no more than five sources."
+      )
+    )
+  }
+
+  # -------------------------------------------------
+  # Get selected sources
+  # -------------------------------------------------
+
+  df <- scored_results() |>
+    dplyr::filter(data_source %in% selected)
+
+  # Preserve the order selected by the user
+  df$data_source <- factor(
+    df$data_source,
+    levels = selected
+  )
+
+  df <- df |>
+    dplyr::arrange(data_source)
+
+  # -------------------------------------------------
+  # Shared grid definition
+  #
+  # IMPORTANT:
+  # Every row in the comparison uses this exact
+  # same grid so the columns always line up.
+  # -------------------------------------------------
+
+  label_width <- 180
+  source_width <- 190
+
+  comparison_grid <- paste0(
+    "display:grid;",
+    "grid-template-columns:",
+    label_width,
+    "px repeat(",
+    nrow(df),
+    ", minmax(",
+    source_width,
+    "px, 1fr));",
+    "min-width:",
+    label_width + (nrow(df) * source_width),
+    "px;"
+  )
+
+  # -------------------------------------------------
+  # Helper: normalize displayed values
+  # -------------------------------------------------
+
+  display_value <- function(x) {
+
+    x <- as_text(x)
+
+    if (!nzchar(x)) {
+
+      return(
+        tags$span(
+          style = paste0(
+            "color:#9CA3AF;",
+            "font-style:italic;",
+            "font-size:12px;"
+          ),
+          "Not specified"
+        )
+      )
+    }
+
+    tags$span(
+      style = paste0(
+        "display:block;",
+        "font-size:13px;",
+        "line-height:1.5;",
+        "color:#374151;",
+        "white-space:normal;",
+        "overflow-wrap:anywhere;",
+        "word-break:break-word;"
+      ),
+      x
+    )
+  }
+
+  # -------------------------------------------------
+  # Helper: access styling
+  # -------------------------------------------------
+
+  get_access_style <- function(access_text) {
+
+    access <- tolower(as_text(access_text))
+
+    if (stringr::str_detect(access, "restricted")) {
+
+      list(
+        label = "Restricted",
+        bg = "#FEE2E2",
+        fg = "#991B1B"
+      )
+
+    } else if (stringr::str_detect(access, "controlled|credentialed")) {
+
+      list(
+        label = "Controlled",
+        bg = "#FEF3C7",
+        fg = "#92400E"
+      )
+
+    } else if (stringr::str_detect(access, "registered")) {
+
+      list(
+        label = "Registered",
+        bg = "#E0F2FE",
+        fg = "#075985"
+      )
+
+    } else if (stringr::str_detect(access, "open|public")) {
+
+      list(
+        label = "Open",
+        bg = "#DCFCE7",
+        fg = "#166534"
+      )
+
+    } else {
+
+      list(
+        label = "Unknown",
+        bg = "#F3F4F6",
+        fg = "#4B5563"
+      )
+    }
+  }
+
+  # -------------------------------------------------
+  # Helper: score styling
+  # -------------------------------------------------
+
+  get_score_style <- function(score) {
+
+    score <- as.numeric(score)
+
+    if (is.na(score)) {
+
+      return(
+        list(
+          label = "N/A",
+          bg = "#F3F4F6",
+          fg = "#4B5563"
+        )
+      )
+    }
+
+    if (score >= 70) {
+
+      list(
+        label = paste0(round(score), "%"),
+        bg = "#DCFCE7",
+        fg = "#166534"
+      )
+
+    } else if (score >= 40) {
+
+      list(
+        label = paste0(round(score), "%"),
+        bg = "#FEF3C7",
+        fg = "#92400E"
+      )
+
+    } else {
+
+      list(
+        label = paste0(round(score), "%"),
+        bg = "#FEE2E2",
+        fg = "#991B1B"
+      )
+    }
+  }
+
+  # -------------------------------------------------
+  # Header row
+  # -------------------------------------------------
+
+  source_headers <- purrr::map(
+    seq_len(nrow(df)),
+    function(i) {
+
+      row <- df[i, ]
+
+      tags$div(
+        style = paste0(
+          "padding:16px 14px;",
+          "background:#F8F1F2;",
+          "border-right:1px solid #E5D3D5;",
+          "min-width:0;",
+          "overflow-wrap:anywhere;",
+          "word-break:break-word;"
+        ),
+
+        tags$div(
+          style = paste0(
+            "font-size:15px;",
+            "font-weight:800;",
+            "line-height:1.3;",
+            "color:#73000A;",
+            "white-space:normal;",
+            "overflow-wrap:anywhere;",
+            "word-break:break-word;"
+          ),
+          as.character(row$data_source)
+        ),
+
+        tags$div(
+          style = paste0(
+            "margin-top:6px;",
+            "font-size:11px;",
+            "font-weight:600;",
+            "color:#6B7280;"
+          ),
+          paste0("Rank #", i)
+        )
+      )
+    }
+  )
+
+  # -------------------------------------------------
+  # Quick view row
+  # -------------------------------------------------
+
+  quick_view_cells <- purrr::map(
+    seq_len(nrow(df)),
+    function(i) {
+
+      row <- df[i, ]
+
+      score_style <- get_score_style(row$match_score)
+      access_style <- get_access_style(row$access_level_standardized)
+
+      tags$div(
+        style = paste0(
+          "padding:12px 14px;",
+          "background:#FFFFFF;",
+          "border-right:1px solid #EEF2F7;",
+          "min-width:0;",
+          "overflow-wrap:anywhere;"
+        ),
+
+        tags$div(
+          style = "margin-bottom:6px;",
+
+          tags$span(
+            style = paste0(
+              "display:inline-flex;",
+              "align-items:center;",
+              "padding:4px 8px;",
+              "border-radius:999px;",
+              "background:",
+              score_style$bg,
+              ";",
+              "color:",
+              score_style$fg,
+              ";",
+              "font-size:11px;",
+              "font-weight:700;",
+              "white-space:nowrap;"
+            ),
+            paste0(score_style$label, " match")
+          )
+        ),
+
+        tags$span(
+          style = paste0(
+            "display:inline-flex;",
+            "align-items:center;",
+            "padding:4px 8px;",
+            "border-radius:999px;",
+            "background:",
+            access_style$bg,
+            ";",
+            "color:",
+            access_style$fg,
+            ";",
+            "font-size:11px;",
+            "font-weight:700;",
+            "white-space:nowrap;"
+          ),
+          access_style$label
+        )
+      )
+    }
+  )
+
+  # -------------------------------------------------
+  # Comparison fields
+  # -------------------------------------------------
+
+  comparison_rows <- list(
+
+    list(
+      label = "Match Score",
+      values = df$match_score
     ),
-    need(
-      length(selected) <= 5,
-      "Choose no more than five sources."
+
+    list(
+      label = "Access",
+      values = df$access_level_standardized
+    ),
+
+    list(
+      label = "Access Burden",
+      values = df$access_burden_for_filter
+    ),
+
+    list(
+      label = "Category",
+      values = df$category_for_filter
+    ),
+
+    list(
+      label = "Data Type",
+      values = df$data_type_for_filter
+    ),
+
+    list(
+      label = "Population",
+      values = df$population
+    ),
+
+    list(
+      label = "Geography",
+      values = df$geography_coverage
+    ),
+
+    list(
+      label = "Unit of Analysis",
+      values = df$unit_of_analysis
+    ),
+
+    list(
+      label = "Years",
+      values = df$years_available
+    ),
+
+    list(
+      label = "Linkage Potential",
+      values = df$linkage_potential
+    ),
+
+    list(
+      label = "South Carolina Relevance",
+      values = df$south_carolina_relevance
     )
   )
 
-  df <- scored_results() |>
-    dplyr::filter(data_source %in% selected) |>
-    dplyr::mutate(
-      limitations_tooltip = make_limitations_tooltip(
-        limitations_cautions
-      )
-    ) |>
-    dplyr::select(
-      `Data Source` = data_source,
-      `Match Score` = match_score,
-      `Access` = access_level_standardized,
-      `Access Burden` = access_burden_for_filter,
-      `Category` = category_for_filter,
-      `Data Type` = data_type_for_filter,
-      `Population` = population,
-      `Geography` = geography_coverage,
-      `Unit` = unit_of_analysis,
-      `Years` = years_available,
-      `Linkage Potential` = linkage_potential,
-      `SC Relevance` = south_carolina_relevance,
-      `Limitations` = limitations_tooltip
-    )
+  # -------------------------------------------------
+  # Standard comparison rows
+  # -------------------------------------------------
 
-  limitations_column <- which(names(df) == "Limitations") - 1L
+  matrix_rows <- purrr::map(
+    comparison_rows,
+    function(item) {
 
-  DT::datatable(
-    df,
-    rownames = FALSE,
+      tags$div(
+        style = paste0(
+          comparison_grid,
+          "border-top:1px solid #EEF2F7;"
+        ),
 
-    # Escape all columns except the tooltip HTML column.
-    escape = setdiff(names(df), "Limitations"),
+        # Row label
+        tags$div(
+          style = paste0(
+            "padding:12px 14px;",
+            "background:#F9FAFB;",
+            "border-right:1px solid #EEF2F7;",
+            "font-size:11px;",
+            "font-weight:800;",
+            "text-transform:uppercase;",
+            "letter-spacing:0.04em;",
+            "color:#6B7280;",
+            "min-width:0;",
+            "overflow-wrap:anywhere;",
+            "word-break:break-word;"
+          ),
+          item$label
+        ),
 
-    options = list(
-      pageLength = 5,
-      scrollX = TRUE,
-      autoWidth = FALSE,
+        # Source values
+        purrr::map(
+          item$values,
+          function(value) {
 
-      columnDefs = list(
-        list(
-          targets = limitations_column,
-          width = "125px",
-          className = "limitations-cell",
-          orderable = FALSE
+            tags$div(
+              style = paste0(
+                "padding:12px 14px;",
+                "background:#FFFFFF;",
+                "border-right:1px solid #EEF2F7;",
+                "min-width:0;",
+                "overflow-wrap:anywhere;",
+                "word-break:break-word;"
+              ),
+              display_value(value)
+            )
+          }
         )
       )
+    }
+  )
+
+  # -------------------------------------------------
+  # Limitations row
+  # -------------------------------------------------
+
+  limitations_cells <- purrr::map(
+    seq_len(nrow(df)),
+    function(i) {
+
+      row <- df[i, ]
+      txt <- as_text(row$limitations_cautions)
+
+      tags$div(
+        style = paste0(
+          "padding:12px 14px;",
+          "background:#FFFFFF;",
+          "border-right:1px solid #EEF2F7;",
+          "min-width:0;",
+          "overflow-wrap:anywhere;"
+        ),
+
+        if (nzchar(txt)) {
+
+          tags$details(
+
+            tags$summary(
+              style = paste0(
+                "cursor:pointer;",
+                "color:#73000A;",
+                "font-size:12px;",
+                "font-weight:700;"
+              ),
+              "View limitations"
+            ),
+
+            tags$p(
+              style = paste0(
+                "margin:8px 0 0;",
+                "font-size:12px;",
+                "line-height:1.5;",
+                "color:#4B5563;",
+                "white-space:normal;",
+                "overflow-wrap:anywhere;",
+                "word-break:break-word;"
+              ),
+              txt
+            )
+          )
+
+        } else {
+
+          tags$span(
+            style = "color:#9CA3AF;font-size:12px;",
+            "Not specified"
+          )
+        }
+      )
+    }
+  )
+
+  limitations_row <- tags$div(
+    style = paste0(
+      comparison_grid,
+      "border-top:1px solid #EEF2F7;"
+    ),
+
+    tags$div(
+      style = paste0(
+        "padding:12px 14px;",
+        "background:#F9FAFB;",
+        "border-right:1px solid #EEF2F7;",
+        "font-size:11px;",
+        "font-weight:800;",
+        "text-transform:uppercase;",
+        "letter-spacing:0.04em;",
+        "color:#6B7280;"
+      ),
+      "Limitations"
+    ),
+
+    limitations_cells
+  )
+
+  # -------------------------------------------------
+  # Official source links
+  # -------------------------------------------------
+
+  links_cells <- purrr::map(
+    seq_len(nrow(df)),
+    function(i) {
+
+      row <- df[i, ]
+
+      if (
+        !is.na(row$official_url) &&
+        nchar(row$official_url) > 0
+      ) {
+
+        tags$div(
+          style = paste0(
+            "padding:14px;",
+            "background:#FFFFFF;",
+            "border-right:1px solid #EEF2F7;",
+            "min-width:0;"
+          ),
+
+          tags$a(
+            href = row$official_url,
+            target = "_blank",
+            rel = "noopener noreferrer",
+            style = paste0(
+              "font-size:12px;",
+              "font-weight:700;",
+              "color:#73000A;",
+              "text-decoration:none;"
+            ),
+            "Open source"
+          )
+        )
+
+      } else {
+
+        tags$div(
+          style = paste0(
+            "padding:14px;",
+            "background:#FFFFFF;",
+            "border-right:1px solid #EEF2F7;",
+            "color:#9CA3AF;",
+            "font-size:12px;",
+            "min-width:0;"
+          ),
+          "Not available"
+        )
+      }
+    }
+  )
+
+  links_row <- tags$div(
+    style = paste0(
+      comparison_grid,
+      "border-top:1px solid #EEF2F7;"
+    ),
+
+    tags$div(
+      style = paste0(
+        "padding:14px;",
+        "background:#F9FAFB;",
+        "border-right:1px solid #EEF2F7;",
+        "font-size:11px;",
+        "font-weight:800;",
+        "text-transform:uppercase;",
+        "letter-spacing:0.04em;",
+        "color:#6B7280;"
+      ),
+      "Official Source"
+    ),
+
+    links_cells
+  )
+
+  # -------------------------------------------------
+  # Final comparison matrix
+  # -------------------------------------------------
+
+  tags$div(
+
+    style = paste0(
+      "background:#FFFFFF;",
+      "border:1px solid #E5E7EB;",
+      "border-radius:14px;",
+      "overflow-x:auto;",
+      "overflow-y:hidden;",
+      "width:100%;",
+      "box-shadow:0 2px 8px rgba(31,41,55,0.05);"
+    ),
+
+    # Header
+    tags$div(
+      style = comparison_grid,
+
+      tags$div(
+        style = paste0(
+          "padding:16px 14px;",
+          "background:#73000A;",
+          "color:#FFFFFF;",
+          "font-size:11px;",
+          "font-weight:800;",
+          "text-transform:uppercase;",
+          "letter-spacing:0.05em;",
+          "display:flex;",
+          "align-items:center;",
+          "min-width:0;"
+        ),
+        "Compare"
+      ),
+
+      source_headers
+    ),
+
+    # Quick view
+    tags$div(
+      style = paste0(
+        comparison_grid,
+        "border-top:1px solid #EEF2F7;"
+      ),
+
+      tags$div(
+        style = paste0(
+          "padding:12px 14px;",
+          "background:#F9FAFB;",
+          "border-right:1px solid #EEF2F7;",
+          "font-size:11px;",
+          "font-weight:800;",
+          "text-transform:uppercase;",
+          "letter-spacing:0.04em;",
+          "color:#6B7280;"
+        ),
+        "Quick View"
+      ),
+
+      quick_view_cells
+    ),
+
+    # Main rows
+    matrix_rows,
+
+    # Limitations
+    limitations_row,
+
+    # Official source
+    links_row
+  )
+})
+
+output$visual_summary_tiles <- renderUI({
+
+  df <- scored_results()
+
+  n_sources <- nrow(df)
+
+  avg_score <- if (n_sources > 0) {
+    round(mean(df$match_score, na.rm = TRUE))
+  } else {
+    0
+  }
+
+  top_score <- if (n_sources > 0) {
+    round(max(df$match_score, na.rm = TRUE))
+  } else {
+    0
+  }
+
+  open_count <- if (n_sources > 0) {
+    sum(
+      df$access_burden_for_filter == "Low" |
+        stringr::str_detect(
+          tolower(df$access_level_standardized),
+          "open|public"
+        ),
+      na.rm = TRUE
+    )
+  } else {
+    0
+  }
+
+  top_source <- if (n_sources > 0) {
+    as_text(df$data_source[1])
+  } else {
+    "None"
+  }
+
+  tile <- function(value, label, detail = NULL) {
+
+    tags$div(
+      style = paste0(
+        "background:#FFFFFF;",
+        "border:1px solid #E5E7EB;",
+        "border-radius:14px;",
+        "padding:18px 20px;"
+      ),
+
+      tags$div(
+        style = paste0(
+          "font-size:26px;",
+          "font-weight:800;",
+          "line-height:1;",
+          "color:#73000A;"
+        ),
+        value
+      ),
+
+      tags$div(
+        style = paste0(
+          "margin-top:7px;",
+          "font-size:12px;",
+          "font-weight:700;",
+          "text-transform:uppercase;",
+          "letter-spacing:0.04em;",
+          "color:#4B5563;"
+        ),
+        label
+      ),
+
+      if (!is.null(detail) && nzchar(detail)) {
+        tags$div(
+          style = paste0(
+            "margin-top:5px;",
+            "font-size:12px;",
+            "line-height:1.4;",
+            "color:#6B7280;"
+          ),
+          detail
+        )
+      }
+    )
+  }
+
+  tags$div(
+
+    style = paste0(
+      "display:grid;",
+      "grid-template-columns:repeat(4,minmax(0,1fr));",
+      "gap:14px;"
+    ),
+
+    tile(
+      n_sources,
+      "Matching Sources",
+      "Current filtered results"
+    ),
+
+    tile(
+      paste0(avg_score, "%"),
+      "Average Match",
+      "Across current results"
+    ),
+
+    tile(
+      paste0(top_score, "%"),
+      "Highest Match",
+      top_source
+    ),
+
+    tile(
+      open_count,
+      "Open / Public",
+      "Low-burden or public access"
     )
   )
 })
 
 output$score_plot <- renderPlot({
+
   df <- scored_results() |>
-    dplyr::slice_head(n = min(15, input$top_n))
-  validate(need(nrow(df) > 0, "No results to plot."))
-  ggplot(df, aes(x = reorder(data_source, match_score), y = match_score)) +
-    geom_col() +
-    coord_flip() +
-    labs(x = NULL, y = "Match score", title = "Top data source matches") +
-    theme_minimal(base_size = 12)
+    dplyr::slice_head(n = min(10, input$top_n))
+
+  validate(
+    need(
+      nrow(df) > 0,
+      "No results to plot."
+    )
+  )
+
+  ggplot(
+    df,
+    aes(
+      x = reorder(data_source, match_score),
+      y = match_score
+    )
+  ) +
+
+    geom_col(
+      width = 0.65
+    ) +
+
+    geom_text(
+      aes(
+        label = paste0(round(match_score), "%")
+      ),
+      hjust = -0.15,
+      size = 3.5
+    ) +
+
+    coord_flip(
+      clip = "off"
+    ) +
+
+    scale_y_continuous(
+      limits = c(0, 105),
+      breaks = c(0, 25, 50, 75, 100)
+    ) +
+
+    labs(
+      x = NULL,
+      y = NULL
+    ) +
+
+    theme_minimal(
+      base_size = 12
+    ) +
+
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(5, 25, 5, 5)
+    )
 })
 
+
 output$category_plot <- renderPlot({
+
   df <- scored_results() |>
-    tidyr::separate_rows(category_for_filter, sep = ";") |>
-    dplyr::mutate(category_for_filter = stringr::str_squish(category_for_filter)) |>
-    dplyr::filter(nchar(category_for_filter) > 0) |>
-    dplyr::count(category_for_filter, sort = TRUE) |>
-    dplyr::slice_head(n = 15)
-  validate(need(nrow(df) > 0, "No categories to plot."))
-  ggplot(df, aes(x = reorder(category_for_filter, n), y = n)) +
-    geom_col() +
-    coord_flip() +
-    labs(x = NULL, y = "Number of matching sources", title = "Category distribution among current results") +
-    theme_minimal(base_size = 12)
+
+    tidyr::separate_rows(
+      category_for_filter,
+      sep = ";"
+    ) |>
+
+    dplyr::mutate(
+      category_for_filter =
+        stringr::str_squish(category_for_filter)
+    ) |>
+
+    dplyr::filter(
+      nchar(category_for_filter) > 0
+    ) |>
+
+    dplyr::count(
+      category_for_filter,
+      sort = TRUE
+    ) |>
+
+    dplyr::slice_head(n = 8)
+
+  validate(
+    need(
+      nrow(df) > 0,
+      "No categories to plot."
+    )
+  )
+
+  ggplot(
+    df,
+    aes(
+      x = reorder(category_for_filter, n),
+      y = n
+    )
+  ) +
+
+    geom_col(
+      width = 0.65
+    ) +
+
+    geom_text(
+      aes(
+        label = n
+      ),
+      hjust = -0.15,
+      size = 3.5
+    ) +
+
+    coord_flip(
+      clip = "off"
+    ) +
+
+    scale_y_continuous(
+      expand = expansion(mult = c(0, 0.12))
+    ) +
+
+    labs(
+      x = NULL,
+      y = NULL
+    ) +
+
+    theme_minimal(
+      base_size = 12
+    ) +
+
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(5, 25, 5, 5)
+    )
 })
 
 data_fit_summary <- reactive({
-  df <- scored_results() |> dplyr::slice_head(n = 6)
-  if (nrow(df) == 0) return("No data sources meet the current criteria. Try broadening keywords or lowering the minimum score.")
+
+  df <- scored_results() |>
+    dplyr::slice_head(n = 6)
+
+  if (nrow(df) == 0) {
+    return(NULL)
+  }
+
+  # -------------------------------------------------
+  # Primary source
+  # -------------------------------------------------
 
   top <- df[1, ]
-  companions <- df |> dplyr::slice(2:min(6, nrow(df))) |> dplyr::pull(data_source)
-  companion_text <- if (length(companions) > 0) paste(companions, collapse = "; ") else "None identified in the current search."
 
-  paste0(
-    "RDCD DATA FIT SUMMARY\n",
-    "=====================\n\n",
-    "Research question / concept:\n", input$question, "\n\n",
-    "Keywords used:\n", paste(search_terms(), collapse = ", "), "\n\n",
-    "Recommended primary source:\n", top$data_source, " (", top$match_score, "% match)\n",
-    "Access level: ", top$access_level_standardized, "\n",
-    "Access burden: ", top$access_burden_for_filter, "\n",
-    "Category: ", top$category_for_filter, "\n",
-    "Data type: ", top$data_type_for_filter, "\n",
-    "Main use: ", top$main_data_type_use, "\n\n",
-    "Suggested companion sources:\n", companion_text, "\n\n",
-    "Why this source fits:\n", top$why_matched, "\n\n",
-    "Suggested next RDCD step:\n",
-    "Confirm the outcome, exposure, population, geography, years, access requirements, and analytic unit before moving to analysis planning or formal data request.\n\n",
-    "Caution:\n",
-    "This tool supports triage and feasibility review. It does not replace IRB, DUA, data governance, or source-specific access review."
+  # -------------------------------------------------
+  # Strongest sources
+  # -------------------------------------------------
+
+  strong_sources <- df |>
+    dplyr::filter(match_score >= 70) |>
+    dplyr::pull(data_source)
+
+  if (length(strong_sources) == 0) {
+    strong_sources <- head(df$data_source, min(3, nrow(df)))
+  }
+
+  # -------------------------------------------------
+  # Why these sources matched
+  # -------------------------------------------------
+
+  matched_terms <- unique(
+    unlist(
+      stringr::str_split(
+        as_text(df$matched_terms),
+        ";"
+      )
+    )
+  )
+
+  matched_terms <- stringr::str_squish(matched_terms)
+  matched_terms <- matched_terms[nchar(matched_terms) > 0]
+  matched_terms <- head(unique(matched_terms), 8)
+
+  why_text <- if (length(matched_terms) > 0) {
+    paste(
+      "The strongest matches align with the search through",
+      paste(matched_terms, collapse = ", "),
+      "."
+    )
+  } else {
+    paste(
+      "The strongest matches were ranked based on the available",
+      "keyword, concept, category, data-type, geography, access,",
+      "and linkage signals."
+    )
+  }
+
+  # Add the strongest source's specific matching rationale
+  top_why <- as_text(top$why_matched)
+
+  if (nzchar(top_why)) {
+    why_text <- paste(
+      why_text,
+      "For the leading source, the ranking rationale was:",
+      top_why
+    )
+  }
+
+  # -------------------------------------------------
+  # Tradeoffs
+  # -------------------------------------------------
+
+  access_values <- unique(
+    as_text(df$access_level_standardized)
+  )
+
+  burden_values <- unique(
+    as_text(df$access_burden_for_filter)
+  )
+
+  tradeoff_parts <- character()
+
+  if (length(access_values) > 0) {
+
+    tradeoff_parts <- c(
+      tradeoff_parts,
+      paste0(
+        "Access varies across the leading sources: ",
+        paste(access_values, collapse = "; "),
+        "."
+      )
+    )
+  }
+
+  if (length(burden_values) > 0) {
+
+    tradeoff_parts <- c(
+      tradeoff_parts,
+      paste0(
+        "The access burden ranges from ",
+        paste(burden_values, collapse = ", "),
+        "."
+      )
+    )
+  }
+
+  # Compare linkage potential
+  linkage_values <- unique(
+    tolower(as_text(df$linkage_potential))
+  )
+
+  linkage_values <- linkage_values[nzchar(linkage_values)]
+
+  if (length(linkage_values) > 0) {
+
+    tradeoff_parts <- c(
+      tradeoff_parts,
+      paste0(
+        "Linkage potential across the leading sources includes ",
+        paste(unique(linkage_values), collapse = ", "),
+        "."
+      )
+    )
+  }
+
+  # Geographic tradeoff
+  geography_values <- unique(
+    as_text(df$geography_coverage)
+  )
+
+  geography_values <- geography_values[nzchar(geography_values)]
+
+  if (length(geography_values) > 0) {
+
+    tradeoff_parts <- c(
+      tradeoff_parts,
+      paste0(
+        "Geographic coverage differs across sources, including ",
+        paste(head(geography_values, 4), collapse = "; "),
+        "."
+      )
+    )
+  }
+
+  tradeoff_text <- if (length(tradeoff_parts) > 0) {
+    paste(tradeoff_parts, collapse = " ")
+  } else {
+    "Tradeoffs could not be fully characterized from the current source fields."
+  }
+
+  # -------------------------------------------------
+  # Strongest source recommendation
+  # -------------------------------------------------
+
+  strongest_text <- if (length(strong_sources) == 1) {
+
+    paste0(
+      strong_sources[1],
+      " appears to be the strongest current match."
+    )
+
+  } else {
+
+    paste0(
+      paste(strong_sources, collapse = ", "),
+      " look like the strongest current matches."
+    )
+  }
+
+  # -------------------------------------------------
+  # Practical recommendation
+  # -------------------------------------------------
+
+  recommendation_text <- paste0(
+    "Start with ",
+    top$data_source,
+    " as the primary source because it has the highest current ",
+    "match score (",
+    round(top$match_score),
+    "%). "
+  )
+
+  if (length(strong_sources) > 1) {
+
+    companion_sources <- strong_sources[
+      strong_sources != top$data_source
+    ]
+
+    if (length(companion_sources) > 0) {
+
+      recommendation_text <- paste0(
+        recommendation_text,
+        paste(
+          "Use",
+          paste(companion_sources, collapse = " and "),
+          "as secondary or companion sources where they add complementary coverage."
+        )
+      )
+    }
+  }
+
+  # -------------------------------------------------
+  # Return structured narrative
+  # -------------------------------------------------
+
+  list(
+    top_source = as_text(top$data_source),
+    top_score = round(top$match_score),
+    why = why_text,
+    tradeoffs = tradeoff_text,
+    strongest = strongest_text,
+    recommendation = recommendation_text
   )
 })
 
 output$fit_summary <- renderUI({
-  txt <- data_fit_summary()
 
-  if (is.null(txt) || !nzchar(txt)) {
-    return(div(class = "fit-summary-callout", p("No summary available yet.")))
+  summary <- data_fit_summary()
+
+  if (is.null(summary)) {
+
+    return(
+      tags$div(
+
+        style = paste0(
+          "padding:40px;",
+          "text-align:center;",
+          "background:#FFFFFF;",
+          "border:1px solid #E5E7EB;",
+          "border-radius:14px;"
+        ),
+
+        tags$h3(
+          style = "margin:0 0 8px;color:#1F2937;",
+          "No recommendation available"
+        ),
+
+        tags$p(
+          style = "margin:0;color:#6B7280;",
+          "Run a search with matching sources to generate a data fit recommendation."
+        )
+      )
+    )
   }
 
-  div(
-    class = "fit-summary-shell",
+  # -------------------------------------------------
+  # Narrative section helper
+  # -------------------------------------------------
 
-    div(
-      class = "fit-summary-hero",
-      div(class = "fit-summary-kicker", "AI-assisted recommendation"),
-      h3("Data Fit Recommendation"),
-      p(
-        class = "fit-summary-lead",
-        "A concise summary of the best-fit source(s), access path, and next RDCD step."
+  narrative_section <- function(number, title, text) {
+
+    tags$div(
+
+      style = paste0(
+        "padding:18px 20px;",
+        "background:#FFFFFF;",
+        "border:1px solid #E5E7EB;",
+        "border-radius:12px;"
+      ),
+
+      tags$div(
+
+        style = paste0(
+          "display:flex;",
+          "align-items:center;",
+          "gap:10px;",
+          "margin-bottom:8px;"
+        ),
+
+        tags$span(
+          style = paste0(
+            "display:inline-flex;",
+            "align-items:center;",
+            "justify-content:center;",
+            "width:28px;",
+            "height:28px;",
+            "border-radius:50%;",
+            "background:#F8F1F2;",
+            "color:#73000A;",
+            "font-size:12px;",
+            "font-weight:800;"
+          ),
+          number
+        ),
+
+        tags$h4(
+          style = paste0(
+            "margin:0;",
+            "font-size:15px;",
+            "font-weight:800;",
+            "color:#1F2937;"
+          ),
+          title
+        )
+      ),
+
+      tags$p(
+        style = paste0(
+          "margin:0;",
+          "font-size:14px;",
+          "line-height:1.65;",
+          "color:#4B5563;"
+        ),
+        text
+      )
+    )
+  }
+
+  # -------------------------------------------------
+  # Strongest source badges
+  # -------------------------------------------------
+
+  strongest_badges <- summary$strongest
+
+  # -------------------------------------------------
+  # Final recommendation block
+  # -------------------------------------------------
+
+  tags$div(
+
+    # Main recommendation
+    tags$div(
+
+      style = paste0(
+        "background:#73000A;",
+        "color:#FFFFFF;",
+        "border-radius:16px;",
+        "padding:24px 26px;",
+        "margin-bottom:18px;"
+      ),
+
+      tags$div(
+        style = paste0(
+          "font-size:11px;",
+          "font-weight:800;",
+          "letter-spacing:0.08em;",
+          "text-transform:uppercase;",
+          "opacity:0.85;",
+          "margin-bottom:6px;"
+        ),
+        "Data Fit Recommendation"
+      ),
+
+      tags$h3(
+        style = paste0(
+          "margin:0 0 8px;",
+          "font-size:24px;",
+          "font-weight:800;",
+          "line-height:1.25;"
+        ),
+        summary$top_source
+      ),
+
+      tags$p(
+        style = paste0(
+          "margin:0 0 12px;",
+          "font-size:15px;",
+          "line-height:1.6;",
+          "opacity:0.92;"
+        ),
+        summary$recommendation
+      ),
+
+      tags$span(
+        style = paste0(
+          "display:inline-flex;",
+          "padding:6px 10px;",
+          "border-radius:999px;",
+          "background:rgba(255,255,255,0.14);",
+          "font-size:12px;",
+          "font-weight:700;"
+        ),
+        paste0(summary$top_score, "% match")
       )
     ),
 
-    div(
-      class = "fit-summary-callout",
-      tags$pre(class = "fit-summary-pre", txt)
+    # Narrative sections
+    tags$div(
+
+      style = paste0(
+        "display:flex;",
+        "flex-direction:column;",
+        "gap:14px;"
+      ),
+
+      narrative_section(
+        "1",
+        "Why these sources matched",
+        summary$why
+      ),
+
+      narrative_section(
+        "2",
+        "Tradeoffs to consider",
+        summary$tradeoffs
+      ),
+
+      narrative_section(
+        "3",
+        "Strongest sources",
+        strongest_badges
+      )
+    ),
+
+    # Caution
+    tags$div(
+
+      style = paste0(
+        "margin-top:18px;",
+        "padding:14px 16px;",
+        "background:#F9FAFB;",
+        "border:1px solid #EEF2F7;",
+        "border-radius:10px;"
+      ),
+
+      tags$p(
+        style = paste0(
+          "margin:0;",
+          "font-size:12px;",
+          "line-height:1.5;",
+          "color:#6B7280;"
+        ),
+
+        tags$b(
+          style = "color:#4B5563;",
+          "Note: "
+        ),
+
+        "This recommendation supports source triage and feasibility review. ",
+        "Confirm the outcome, exposure, population, geography, years, ",
+        "analytic unit, and source-specific access requirements before ",
+        "moving into formal data requests or analysis planning."
+      )
     )
   )
 })
 
 output$download_results <- downloadHandler(
+
   filename = function() {
-    paste0("rdcd_data_source_matches_", Sys.Date(), ".csv")
+    paste0(
+      "RDCD_Data_Source_Discovery_Report_",
+      Sys.Date(),
+      ".docx"
+    )
   },
+
+  contentType =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
   content = function(file) {
+
+    # ========================================================
+    # CURRENT RESULTS
+    # ========================================================
+
+    df <- scored_results() |>
+      dplyr::slice_head(
+        n = min(10, input$top_n)
+      )
+
+    # ========================================================
+    # START WORD DOCUMENT
+    # ========================================================
+
+    doc <- officer::read_docx()
+
+    # ========================================================
+    # TITLE
+    # ========================================================
+
+    doc <- officer::body_add_par(
+      doc,
+      "RDCD Public Data Discovery Navigator"
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      "Data Source Discovery Results"
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        "Generated ",
+        Sys.Date()
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      ""
+    )
+
+    # ========================================================
+    # SEARCH CONTEXT
+    # ========================================================
+
+    doc <- officer::body_add_par(
+      doc,
+      "Search Context"
+    )
+
+    question_text <- as_text(
+      input$question
+    )
+
+    if (!nzchar(question_text)) {
+      question_text <- "No research question entered."
+    }
+
+    keywords_text <- paste(
+      search_terms(),
+      collapse = ", "
+    )
+
+    if (!nzchar(keywords_text)) {
+      keywords_text <- "None entered."
+    }
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        "Research question: ",
+        question_text
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        "Keywords: ",
+        keywords_text
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        "Minimum match score: ",
+        input$min_score,
+        "%"
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      ""
+    )
+
+    # ========================================================
+    # RESULTS AT A GLANCE
+    # ========================================================
+
+    doc <- officer::body_add_par(
+      doc,
+      "Results at a Glance"
+    )
+
+    total_matches <- nrow(df)
+
+    highest_score <- if (total_matches > 0) {
+
+      round(
+        max(
+          df$match_score,
+          na.rm = TRUE
+        )
+      )
+
+    } else {
+      0
+    }
+
+    average_score <- if (total_matches > 0) {
+
+      round(
+        mean(
+          df$match_score,
+          na.rm = TRUE
+        )
+      )
+
+    } else {
+      0
+    }
+
+    open_public_count <- if (total_matches > 0) {
+
+      sum(
+        df$access_burden_for_filter == "Low" |
+          stringr::str_detect(
+            tolower(
+              df$access_level_standardized
+            ),
+            "open|public"
+          ),
+        na.rm = TRUE
+      )
+
+    } else {
+      0
+    }
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        total_matches,
+        " matching sources"
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        average_score,
+        "% average match"
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        highest_score,
+        "% highest match"
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      paste0(
+        open_public_count,
+        " open/public or low-burden sources"
+      )
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      ""
+    )
+
+    # ========================================================
+    # TOP MATCHING SOURCES
+    # ========================================================
+
+    doc <- officer::body_add_par(
+      doc,
+      "Top Matching Sources"
+    )
+
+    if (nrow(df) == 0) {
+
+      doc <- officer::body_add_par(
+        doc,
+        "No sources meet the current search criteria."
+      )
+
+    } else {
+
+      for (i in seq_len(nrow(df))) {
+
+        row <- df[i, ]
+
+        # ----------------------------------------------------
+        # Source name
+        # ----------------------------------------------------
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            i,
+            ". ",
+            as_text(row$data_source)
+          )
+        )
+
+        # ----------------------------------------------------
+        # Match + access
+        # ----------------------------------------------------
+
+        score_text <- if (
+          is.na(row$match_score)
+        ) {
+
+          "N/A"
+
+        } else {
+
+          paste0(
+            round(row$match_score),
+            "%"
+          )
+        }
+
+        access_text <- report_value(
+          row$access_level_standardized
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Match: ",
+            score_text,
+            "    |    Access: ",
+            access_text
+          )
+        )
+
+        # ----------------------------------------------------
+        # Summary
+        # ----------------------------------------------------
+
+        summary_text <- as_text(
+          row$main_data_type_use
+        )
+
+        if (!nzchar(summary_text)) {
+
+          summary_text <- as_text(
+            row$suggested_use_cases
+          )
+        }
+
+        if (!nzchar(summary_text)) {
+
+          summary_text =
+            "No summary is available for this source."
+        }
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Summary: ",
+            summary_text
+          )
+        )
+
+        # ----------------------------------------------------
+        # Tags
+        # ----------------------------------------------------
+
+        tags_text <- make_report_tags(
+          row
+        )
+
+        if (!nzchar(tags_text)) {
+          tags_text <- "None specified"
+        }
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Tags: ",
+            tags_text
+          )
+        )
+
+        # ----------------------------------------------------
+        # Why this source matched
+        # ----------------------------------------------------
+
+        why_text <- report_value(
+          row$why_matched
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Why it matched: ",
+            why_text
+          )
+        )
+
+        # ----------------------------------------------------
+        # Key considerations
+        # ----------------------------------------------------
+
+        doc <- officer::body_add_par(
+          doc,
+          "Key considerations"
+        )
+
+        geography_text <- report_value(
+          row$geography_coverage
+        )
+
+        data_type_text <- report_value(
+          row$data_type_for_filter
+        )
+
+        population_text <- report_value(
+          row$population
+        )
+
+        years_text <- report_value(
+          row$years_available
+        )
+
+        access_burden_text <- report_value(
+          row$access_burden_for_filter
+        )
+
+        linkage_text <- report_value(
+          row$linkage_potential
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Geography: ",
+            geography_text
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Data type: ",
+            data_type_text
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Population: ",
+            population_text
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Years: ",
+            years_text
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Access burden: ",
+            access_burden_text
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Linkage potential: ",
+            linkage_text
+          )
+        )
+
+        # ----------------------------------------------------
+        # Limitations
+        # ----------------------------------------------------
+
+        limitations <- as_text(
+          row$limitations_cautions
+        )
+
+        if (nzchar(limitations)) {
+
+          doc <- officer::body_add_par(
+            doc,
+            paste0(
+              "Limitations: ",
+              limitations
+            )
+          )
+        }
+
+        # ----------------------------------------------------
+        # Official source
+        # ----------------------------------------------------
+
+        official_url <- as_text(
+          row$official_url
+        )
+
+        if (nzchar(official_url)) {
+
+          doc <- officer::body_add_par(
+            doc,
+            paste0(
+              "Official source: ",
+              official_url
+            )
+          )
+        }
+
+        # ----------------------------------------------------
+        # Space before next source
+        # ----------------------------------------------------
+
+        doc <- officer::body_add_par(
+          doc,
+          ""
+        )
+      }
+    }
+
+    # ========================================================
+    # APPENDIX
+    # ========================================================
+
+    doc <- officer::body_add_par(
+      doc,
+      "Additional Source Details"
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      "The appendix preserves additional catalog fields for users who need more technical detail."
+    )
+
+    if (nrow(df) > 0) {
+
+      for (i in seq_len(nrow(df))) {
+
+        row <- df[i, ]
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            i,
+            ". ",
+            as_text(row$data_source)
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Category: ",
+            report_value(
+              row$category_for_filter
+            )
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Unit of analysis: ",
+            report_value(
+              row$unit_of_analysis
+            )
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "South Carolina relevance: ",
+            report_value(
+              row$south_carolina_relevance
+            )
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Common variables / measures: ",
+            report_value(
+              row$common_variables_measures
+            )
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Suggested use cases: ",
+            report_value(
+              row$suggested_use_cases
+            )
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Companion datasets: ",
+            report_value(
+              row$companion_datasets
+            )
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          paste0(
+            "Data governance notes: ",
+            report_value(
+              row$data_governance_notes
+            )
+          )
+        )
+
+        doc <- officer::body_add_par(
+          doc,
+          ""
+        )
+      }
+    }
+
+    # ========================================================
+    # RDCD NOTE
+    # ========================================================
+
+    doc <- officer::body_add_par(
+      doc,
+      "RDCD Note"
+    )
+
+    doc <- officer::body_add_par(
+      doc,
+      paste(
+        "This report supports data-source triage and feasibility review.",
+        "It does not replace IRB review, data-use agreements,",
+        "data governance review, or source-specific access requirements."
+      )
+    )
+
+    # ========================================================
+    # WRITE DOCUMENT
+    # ========================================================
+
+    print(
+      doc,
+      target = file
+    )
+
+    # ========================================================
+    # VERIFY DOCUMENT
+    # ========================================================
+
+    if (!file.exists(file)) {
+
+      stop(
+        "The Word report was not created."
+      )
+    }
+
+    if (
+      is.na(file.info(file)$size) ||
+      file.info(file)$size <= 0
+    ) {
+
+      stop(
+        "The Word report was created but is empty."
+      )
+    }
+  }
+)
+
+# output$download_results <- downloadHandler(
+# 
+#   filename = function() {
+# 
+#     paste0(
+#       "RDCD_Data_Source_Discovery_Report_",
+#       Sys.Date(),
+#       ".docx"
+#     )
+#   },
+# 
+#   content = function(file) {
+# 
+#     # --------------------------------------------------------
+#     # Get current results
+#     # --------------------------------------------------------
+# 
+#     df <- scored_results() |>
+#       dplyr::slice_head(
+#         n = min(10, input$top_n)
+#       )
+# 
+#     # --------------------------------------------------------
+#     # Start Word document
+#     # --------------------------------------------------------
+# 
+#     doc <- officer::read_docx()
+# 
+#     # --------------------------------------------------------
+#     # Title
+#     # --------------------------------------------------------
+# 
+#     title_fp <- officer::fpar(
+#       officer::ftext(
+#         "RDCD Public Data Discovery Navigator",
+#         prop = officer::fp_text(
+#           bold = TRUE,
+#           color = "73000A",
+#           font.size = 22
+#         )
+#       )
+#     )
+# 
+#     doc <- officer::body_add_fpar(
+#       doc,
+#       title_fp
+#     )
+# 
+#     subtitle_fp <- officer::fpar(
+#       officer::ftext(
+#         "Data Source Discovery Results",
+#         prop = officer::fp_text(
+#           color = "6B7280",
+#           font.size = 13
+#         )
+#       )
+#     )
+# 
+#     doc <- officer::body_add_fpar(
+#       doc,
+#       subtitle_fp
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       paste0(
+#         "Generated ",
+#         Sys.Date()
+#       )
+#     )
+# 
+#     # --------------------------------------------------------
+#     # Search context
+#     # --------------------------------------------------------
+# 
+#     doc <- add_report_heading(
+#       doc,
+#       "Search Context"
+#     )
+# 
+#     question_text <- as_text(
+#       input$question
+#     )
+# 
+#     if (!nzchar(question_text)) {
+#       question_text <- "No research question entered."
+#     }
+# 
+#     context_df <- data.frame(
+# 
+#       Field = c(
+#         "Research Question",
+#         "Keywords Used",
+#         "Minimum Match Score",
+#         "Results Included"
+#       ),
+# 
+#       Value = c(
+#         question_text,
+#         paste(
+#           search_terms(),
+#           collapse = ", "
+#         ),
+#         paste0(
+#           input$min_score,
+#           "%"
+#         ),
+#         nrow(df)
+#       ),
+# 
+#       stringsAsFactors = FALSE
+#     )
+# 
+#     context_ft <- flextable::flextable(
+#       context_df
+#     )
+# 
+#     context_ft <- flextable::theme_booktabs(
+#       context_ft
+#     )
+# 
+#     context_ft <- flextable::fontsize(
+#       context_ft,
+#       size = 9.5,
+#       part = "all"
+#     )
+# 
+#     context_ft <- flextable::bold(
+#       context_ft,
+#       j = 1,
+#       bold = TRUE,
+#       part = "body"
+#     )
+# 
+#     context_ft <- flextable::bg(
+#       context_ft,
+#       j = 1,
+#       bg = "F8F1F2",
+#       part = "body"
+#     )
+# 
+#     context_ft <- flextable::color(
+#       context_ft,
+#       j = 1,
+#       color = "5B0008",
+#       part = "body"
+#     )
+# 
+#     context_ft <- flextable::padding(
+#       context_ft,
+#       padding.top = 6,
+#       padding.bottom = 6,
+#       padding.left = 7,
+#       padding.right = 7,
+#       part = "all"
+#     )
+# 
+#     context_ft <- flextable::width(
+#       context_ft,
+#       j = 1,
+#       width = 1.7
+#     )
+# 
+#     context_ft <- flextable::width(
+#       context_ft,
+#       j = 2,
+#       width = 5
+#     )
+# 
+#     context_ft <- flextable::set_table_properties(
+#       context_ft,
+#       layout = "fixed",
+#       width = 1
+#     )
+# 
+#     doc <- officer::body_add_flextable(
+#       doc,
+#       context_ft
+#     )
+# 
+#     # --------------------------------------------------------
+#     # Results summary
+#     # --------------------------------------------------------
+# 
+#     doc <- add_report_heading(
+#       doc,
+#       "Results Summary"
+#     )
+# 
+#     matching_sources <- nrow(
+#       scored_results()
+#     )
+# 
+#     highest_score <- if (
+#       matching_sources > 0
+#     ) {
+#       max(
+#         scored_results()$match_score,
+#         na.rm = TRUE
+#       )
+#     } else {
+#       0
+#     }
+# 
+#     open_public_count <- if (
+#       matching_sources > 0
+#     ) {
+# 
+#       sum(
+#         scored_results()$access_burden_for_filter == "Low" |
+#           stringr::str_detect(
+#             tolower(
+#               scored_results()$access_level_standardized
+#             ),
+#             "open|public"
+#           ),
+#         na.rm = TRUE
+#       )
+# 
+#     } else {
+#       0
+#     }
+# 
+#     average_score <- if (
+#       matching_sources > 0
+#     ) {
+# 
+#       round(
+#         mean(
+#           scored_results()$match_score,
+#           na.rm = TRUE
+#         )
+#       )
+# 
+#     } else {
+#       0
+#     }
+# 
+#     summary_df <- data.frame(
+# 
+#       Metric = c(
+#         "Matching Sources",
+#         "Average Match",
+#         "Highest Match",
+#         "Open / Public"
+#       ),
+# 
+#       Value = c(
+#         matching_sources,
+#         paste0(
+#           average_score,
+#           "%"
+#         ),
+#         paste0(
+#           round(highest_score),
+#           "%"
+#         ),
+#         open_public_count
+#       ),
+# 
+#       stringsAsFactors = FALSE
+#     )
+# 
+#     summary_ft <- flextable::flextable(
+#       summary_df
+#     )
+# 
+#     summary_ft <- flextable::theme_booktabs(
+#       summary_ft
+#     )
+# 
+#     summary_ft <- flextable::fontsize(
+#       summary_ft,
+#       size = 10,
+#       part = "all"
+#     )
+# 
+#     summary_ft <- flextable::bold(
+#       summary_ft,
+#       j = "Value",
+#       bold = TRUE,
+#       part = "body"
+#     )
+# 
+#     summary_ft <- flextable::color(
+#       summary_ft,
+#       j = "Value",
+#       color = "73000A",
+#       part = "body"
+#     )
+# 
+#     summary_ft <- flextable::align(
+#       summary_ft,
+#       j = "Value",
+#       align = "center",
+#       part = "body"
+#     )
+# 
+#     summary_ft <- flextable::padding(
+#       summary_ft,
+#       padding.top = 7,
+#       padding.bottom = 7,
+#       padding.left = 8,
+#       padding.right = 8,
+#       part = "all"
+#     )
+# 
+#     summary_ft <- flextable::set_table_properties(
+#       summary_ft,
+#       layout = "autofit"
+#     )
+# 
+#     doc <- officer::body_add_flextable(
+#       doc,
+#       summary_ft
+#     )
+# 
+#     # --------------------------------------------------------
+#     # Top matching sources
+#     # --------------------------------------------------------
+# 
+#     doc <- add_report_heading(
+#       doc,
+#       "Top Matching Sources"
+#     )
+# 
+#     if (nrow(df) == 0) {
+# 
+#       doc <- officer::body_add_par(
+#         doc,
+#         "No sources meet the current search criteria."
+#       )
+# 
+#     } else {
+# 
+#       for (i in seq_len(nrow(df))) {
+# 
+#         doc <- add_report_source(
+#           doc,
+#           df[i, ],
+#           i
+#         )
+#       }
+#     }
+# 
+#     # --------------------------------------------------------
+#     # Final note
+#     # --------------------------------------------------------
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       "RDCD Note",
+#       style = "heading 1"
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       paste(
+#         "This report supports data-source triage and feasibility review.",
+#         "It does not replace IRB review, data-use agreements,",
+#         "data governance review, or source-specific access requirements."
+#       )
+#     )
+# 
+#     # --------------------------------------------------------
+#     # Write file
+#     # --------------------------------------------------------
+# 
+#    print(
+#   doc,
+#   target = file
+# )
+# 
+# if (!file.exists(file)) {
+#   stop("Word report was not created.")
+# }
+# 
+# if (file.info(file)$size <= 0) {
+#   stop("Word report was created but is empty.")
+# }
+#   }
+# )
+
+output$download_raw_results <- downloadHandler(
+
+  filename = function() {
+
+    paste0(
+      "rdcd_data_source_matches_",
+      Sys.Date(),
+      ".csv"
+    )
+  },
+
+  content = function(file) {
+
     scored_results() |>
       dplyr::select(
-        record_id, data_source, match_score, official_url, main_data_type_use,
-        access_level_standardized, access_burden_for_filter, category_for_filter,
-        data_type_for_filter, geography_coverage, why_matched
+        record_id,
+        data_source,
+        match_score,
+        official_url,
+        main_data_type_use,
+        access_level_standardized,
+        access_burden_for_filter,
+        category_for_filter,
+        data_type_for_filter,
+        geography_coverage,
+        geographic_unit,
+        unit_of_analysis,
+        population,
+        years_available,
+        linkage_potential,
+        south_carolina_relevance,
+        why_matched,
+        limitations_cautions
       ) |>
-      utils::write.csv(file, row.names = FALSE)
+      utils::write.csv(
+        file,
+        row.names = FALSE
+      )
   }
 )
 
 output$download_summary <- downloadHandler(
+
   filename = function() {
-    paste0("rdcd_data_fit_summary_", Sys.Date(), ".txt")
+    paste0(
+      "rdcd_data_fit_summary_",
+      Sys.Date(),
+      ".txt"
+    )
   },
+
   content = function(file) {
-    writeLines(data_fit_summary(), file)
+
+    summary <- data_fit_summary()
+
+    if (is.null(summary)) {
+
+      writeLines(
+        "No data fit recommendation is currently available.",
+        file
+      )
+
+      return()
+    }
+
+    lines <- c(
+
+      "RDCD DATA FIT RECOMMENDATION",
+      "============================",
+      "",
+      paste0(
+        "Primary recommendation: ",
+        summary$top_source,
+        " (",
+        summary$top_score,
+        "% match)"
+      ),
+      "",
+      "Why these sources matched:",
+      summary$why,
+      "",
+      "Tradeoffs to consider:",
+      summary$tradeoffs,
+      "",
+      "Strongest sources:",
+      summary$strongest,
+      "",
+      "Recommendation:",
+      summary$recommendation,
+      "",
+      "Caution:",
+      paste(
+        "This tool supports source triage and feasibility review.",
+        "Confirm source-specific access, governance, linkage,",
+        "and analytic requirements before formal data requests."
+      )
+    )
+
+    writeLines(
+      lines,
+      file
+    )
   }
 )
 ```
