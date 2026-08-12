@@ -1,7 +1,4 @@
 ---
-title: "RDCD Public Data Discovery Navigator"
-author: "RDCD Core"
-date: "`r Sys.Date()`"
 output:
   html_document:
     toc: true
@@ -3335,18 +3332,6 @@ scored_results <- eventReactive(
   ignoreNULL = FALSE
 )
 
-scored_results <- reactive({
-  score_catalog(
-    df = processed_catalog(),
-    terms = search_terms(),
-    category_filter = input$category_filter %||% character(),
-    data_type_filter = input$data_type_filter %||% character(),
-    geography_filter = input$geography_filter %||% character(),
-    access_filter = input$access_filter %||% character(),
-    open_only = input$open_only
-  ) |>
-    dplyr::filter(match_score >= input$min_score)
-})
 
 output$dashboard_summary <- renderUI({
 
@@ -5414,55 +5399,113 @@ output$download_results <- downloadHandler(
 
   content = function(file) {
 
-    # ========================================================
-    # CURRENT RESULTS
-    # ========================================================
+    # ============================================================
+    # GET RESULTS
+    # ============================================================
 
-    df <- scored_results() |>
+    df <- scored_results()
+
+    if (is.null(df) || nrow(df) == 0) {
+      stop(
+        "No search results are available. Please run a search first."
+      )
+    }
+
+    df <- df |>
       dplyr::slice_head(
-        n = min(10, input$top_n)
+        n = input$top_n
       )
 
-    # ========================================================
+    # ============================================================
     # START WORD DOCUMENT
-    # ========================================================
+    # ============================================================
 
     doc <- officer::read_docx()
 
-    # ========================================================
+    # ============================================================
     # TITLE
-    # ========================================================
+    # ============================================================
 
-    doc <- officer::body_add_par(
-      doc,
-      "RDCD Public Data Discovery Navigator"
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      "Data Source Discovery Results"
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      paste0(
-        "Generated ",
-        Sys.Date()
+    title_fp <- officer::fpar(
+      officer::ftext(
+        "RDCD Public Data Discovery Navigator",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 22
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.bottom = 4
       )
     )
 
-    doc <- officer::body_add_par(
+    doc <- officer::body_add_fpar(
       doc,
-      ""
+      title_fp
     )
 
-    # ========================================================
-    # SEARCH CONTEXT
-    # ========================================================
+    subtitle_fp <- officer::fpar(
+      officer::ftext(
+        "Data Source Discovery Results",
+        prop = officer::fp_text(
+          color = "#6B7280",
+          font.size = 12
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.bottom = 3
+      )
+    )
 
-    doc <- officer::body_add_par(
+    doc <- officer::body_add_fpar(
       doc,
-      "Search Context"
+      subtitle_fp
+    )
+
+    date_fp <- officer::fpar(
+      officer::ftext(
+        paste0(
+          "Generated ",
+          Sys.Date()
+        ),
+        prop = officer::fp_text(
+          color = "#9CA3AF",
+          font.size = 9
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.bottom = 12
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      date_fp
+    )
+
+    # ============================================================
+    # SEARCH CONTEXT
+    # ============================================================
+
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Search Context",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 15
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 6
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      heading_fp
     )
 
     question_text <- as_text(
@@ -5482,75 +5525,155 @@ output$download_results <- downloadHandler(
       keywords_text <- "None entered."
     }
 
-    doc <- officer::body_add_par(
+    # Research question
+    doc <- officer::body_add_fpar(
       doc,
-      paste0(
-        "Research question: ",
-        question_text
+      officer::fpar(
+        officer::ftext(
+          "Research Question: ",
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#5B0008",
+            font.size = 10
+          )
+        ),
+        officer::ftext(
+          question_text,
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 4
+        )
       )
     )
 
-    doc <- officer::body_add_par(
+    # Keywords
+    doc <- officer::body_add_fpar(
       doc,
-      paste0(
-        "Keywords: ",
-        keywords_text
+      officer::fpar(
+        officer::ftext(
+          "Keywords: ",
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#5B0008",
+            font.size = 10
+          )
+        ),
+        officer::ftext(
+          keywords_text,
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 4
+        )
       )
     )
 
-    doc <- officer::body_add_par(
+    # Minimum match score
+    doc <- officer::body_add_fpar(
       doc,
-      paste0(
-        "Minimum match score: ",
-        input$min_score,
-        "%"
+      officer::fpar(
+        officer::ftext(
+          "Minimum Match Score: ",
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#5B0008",
+            font.size = 10
+          )
+        ),
+        officer::ftext(
+          paste0(
+            input$min_score,
+            "%"
+          ),
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 4
+        )
       )
     )
 
-    doc <- officer::body_add_par(
+    # Results included
+    doc <- officer::body_add_fpar(
       doc,
-      ""
+      officer::fpar(
+        officer::ftext(
+          "Results Included: ",
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#5B0008",
+            font.size = 10
+          )
+        ),
+        officer::ftext(
+          as.character(nrow(df)),
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#73000A",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 10
+        )
+      )
     )
 
-    # ========================================================
+    # ============================================================
     # RESULTS AT A GLANCE
-    # ========================================================
+    # ============================================================
 
-    doc <- officer::body_add_par(
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Results at a Glance",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 15
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 6
+      )
+    )
+
+    doc <- officer::body_add_fpar(
       doc,
-      "Results at a Glance"
+      heading_fp
     )
 
     total_matches <- nrow(df)
 
-    highest_score <- if (total_matches > 0) {
-
-      round(
-        max(
-          df$match_score,
-          na.rm = TRUE
-        )
+    average_score <- if (total_matches > 0) {
+      mean(
+        as.numeric(df$match_score),
+        na.rm = TRUE
       )
-
     } else {
       0
     }
 
-    average_score <- if (total_matches > 0) {
-
-      round(
-        mean(
-          df$match_score,
-          na.rm = TRUE
-        )
+    highest_score <- if (total_matches > 0) {
+      max(
+        as.numeric(df$match_score),
+        na.rm = TRUE
       )
-
     } else {
       0
     }
 
     open_public_count <- if (total_matches > 0) {
-
       sum(
         df$access_burden_for_filter == "Low" |
           stringr::str_detect(
@@ -5561,451 +5684,577 @@ output$download_results <- downloadHandler(
           ),
         na.rm = TRUE
       )
-
     } else {
       0
     }
 
-    doc <- officer::body_add_par(
-      doc,
-      paste0(
-        total_matches,
-        " matching sources"
+    metrics_fp <- officer::fpar(
+      officer::ftext(
+        paste0(
+          total_matches,
+          " matching sources"
+        ),
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 11
+        )
+      ),
+      officer::ftext(
+        "    |    ",
+        prop = officer::fp_text(
+          color = "#9CA3AF",
+          font.size = 10
+        )
+      ),
+      officer::ftext(
+        paste0(
+          "Average ",
+          round(average_score),
+          "%"
+        ),
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#374151",
+          font.size = 10
+        )
+      ),
+      officer::ftext(
+        "    |    ",
+        prop = officer::fp_text(
+          color = "#9CA3AF",
+          font.size = 10
+        )
+      ),
+      officer::ftext(
+        paste0(
+          "Highest ",
+          round(highest_score),
+          "%"
+        ),
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#166534",
+          font.size = 10
+        )
+      ),
+      officer::ftext(
+        "    |    ",
+        prop = officer::fp_text(
+          color = "#9CA3AF",
+          font.size = 10
+        )
+      ),
+      officer::ftext(
+        paste0(
+          open_public_count,
+          " open/public"
+        ),
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#374151",
+          font.size = 10
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.bottom = 12
       )
     )
 
-    doc <- officer::body_add_par(
+    doc <- officer::body_add_fpar(
       doc,
-      paste0(
-        average_score,
-        "% average match"
-      )
+      metrics_fp
     )
 
-    doc <- officer::body_add_par(
-      doc,
-      paste0(
-        highest_score,
-        "% highest match"
-      )
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      paste0(
-        open_public_count,
-        " open/public or low-burden sources"
-      )
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      ""
-    )
-
-    # ========================================================
+    # ============================================================
     # TOP MATCHING SOURCES
-    # ========================================================
+    # ============================================================
 
-    doc <- officer::body_add_par(
-      doc,
-      "Top Matching Sources"
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Top Matching Sources",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 15
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 8
+      )
     )
 
-    if (nrow(df) == 0) {
+    doc <- officer::body_add_fpar(
+      doc,
+      heading_fp
+    )
 
-      doc <- officer::body_add_par(
+    # ============================================================
+    # SOURCE SECTIONS
+    # ============================================================
+
+    for (i in seq_len(nrow(df))) {
+
+      row <- df[i, ]
+
+      # ----------------------------------------------------------
+      # Source title
+      # ----------------------------------------------------------
+
+      doc <- officer::body_add_fpar(
         doc,
-        "No sources meet the current search criteria."
+        officer::fpar(
+          officer::ftext(
+            paste0(
+              i,
+              ". ",
+              as_text(row$data_source)
+            ),
+            prop = officer::fp_text(
+              bold = TRUE,
+              color = "#1F2937",
+              font.size = 14
+            )
+          ),
+          fp_p = officer::fp_par(
+            padding.top = 10,
+            padding.bottom = 4,
+            keep_with_next = TRUE
+          )
+        )
       )
 
-    } else {
+      # ----------------------------------------------------------
+      # Match / access
+      # ----------------------------------------------------------
 
-      for (i in seq_len(nrow(df))) {
-
-        row <- df[i, ]
-
-        # ----------------------------------------------------
-        # Source name
-        # ----------------------------------------------------
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            i,
-            ". ",
-            as_text(row$data_source)
-          )
+      score_text <- if (
+        is.na(row$match_score)
+      ) {
+        "N/A"
+      } else {
+        paste0(
+          round(
+            as.numeric(row$match_score)
+          ),
+          "% match"
         )
+      }
 
-        # ----------------------------------------------------
-        # Match + access
-        # ----------------------------------------------------
+      access_text <- make_report_access_label(
+        row$access_level_standardized
+      )
 
-        score_text <- if (
-          is.na(row$match_score)
-        ) {
-
-          "N/A"
-
-        } else {
-
-          paste0(
-            round(row$match_score),
-            "%"
-          )
-        }
-
-        access_text <- report_value(
-          row$access_level_standardized
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Match: ",
+      doc <- officer::body_add_fpar(
+        doc,
+        officer::fpar(
+          officer::ftext(
             score_text,
-            "    |    Access: ",
-            access_text
+            prop = officer::fp_text(
+              bold = TRUE,
+              color = "#166534",
+              font.size = 10
+            )
+          ),
+          officer::ftext(
+            "    |    ",
+            prop = officer::fp_text(
+              color = "#9CA3AF",
+              font.size = 10
+            )
+          ),
+          officer::ftext(
+            access_text,
+            prop = officer::fp_text(
+              bold = TRUE,
+              color = "#73000A",
+              font.size = 10
+            )
+          ),
+          fp_p = officer::fp_par(
+            padding.bottom = 7
           )
         )
+      )
 
-        # ----------------------------------------------------
-        # Summary
-        # ----------------------------------------------------
+      # ----------------------------------------------------------
+      # Summary heading
+      # ----------------------------------------------------------
 
+      doc <- officer::body_add_fpar(
+        doc,
+        officer::fpar(
+          officer::ftext(
+            "Summary",
+            prop = officer::fp_text(
+              bold = TRUE,
+              color = "#5B0008",
+              font.size = 10
+            )
+          ),
+          fp_p = officer::fp_par(
+            padding.top = 5,
+            padding.bottom = 2
+          )
+        )
+      )
+
+      # Summary text
+      summary_text <- as_text(
+        row$main_data_type_use
+      )
+
+      if (!nzchar(summary_text)) {
         summary_text <- as_text(
-          row$main_data_type_use
+          row$suggested_use_cases
         )
+      }
 
-        if (!nzchar(summary_text)) {
+      if (!nzchar(summary_text)) {
+        summary_text <- "No summary is available for this source."
+      }
 
-          summary_text <- as_text(
-            row$suggested_use_cases
-          )
-        }
-
-        if (!nzchar(summary_text)) {
-
-          summary_text =
-            "No summary is available for this source."
-        }
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Summary: ",
-            summary_text
-          )
-        )
-
-        # ----------------------------------------------------
-        # Tags
-        # ----------------------------------------------------
-
-        tags_text <- make_report_tags(
-          row
-        )
-
-        if (!nzchar(tags_text)) {
-          tags_text <- "None specified"
-        }
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Tags: ",
-            tags_text
+      doc <- officer::body_add_fpar(
+        doc,
+        officer::fpar(
+          officer::ftext(
+            summary_text,
+            prop = officer::fp_text(
+              color = "#374151",
+              font.size = 10
+            )
+          ),
+          fp_p = officer::fp_par(
+            padding.bottom = 5
           )
         )
+      )
 
-        # ----------------------------------------------------
-        # Why this source matched
-        # ----------------------------------------------------
+      # ----------------------------------------------------------
+      # Key Details heading
+      # ----------------------------------------------------------
 
-        why_text <- report_value(
-          row$why_matched
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Why it matched: ",
-            why_text
+      doc <- officer::body_add_fpar(
+        doc,
+        officer::fpar(
+          officer::ftext(
+            "Key Details",
+            prop = officer::fp_text(
+              bold = TRUE,
+              color = "#5B0008",
+              font.size = 10
+            )
+          ),
+          fp_p = officer::fp_par(
+            padding.top = 5,
+            padding.bottom = 3
           )
         )
+      )
 
-        # ----------------------------------------------------
-        # Key considerations
-        # ----------------------------------------------------
+      key_details <- list(
+        "Category" =
+          report_value(
+            row$category_for_filter
+          ),
 
-        doc <- officer::body_add_par(
-          doc,
-          "Key considerations"
-        )
+        "Data Type" =
+          report_value(
+            row$data_type_for_filter
+          ),
 
-        geography_text <- report_value(
-          row$geography_coverage
-        )
+        "Population" =
+          report_value(
+            row$population
+          ),
 
-        data_type_text <- report_value(
-          row$data_type_for_filter
-        )
+        "Geography" =
+          report_value(
+            row$geography_coverage
+          ),
 
-        population_text <- report_value(
-          row$population
-        )
+        "Unit of Analysis" =
+          report_value(
+            row$unit_of_analysis
+          ),
 
-        years_text <- report_value(
-          row$years_available
-        )
+        "Years Available" =
+          report_value(
+            row$years_available
+          ),
 
-        access_burden_text <- report_value(
-          row$access_burden_for_filter
-        )
+        "Access Burden" =
+          report_value(
+            row$access_burden_for_filter
+          ),
 
-        linkage_text <- report_value(
-          row$linkage_potential
-        )
+        "Linkage Potential" =
+          report_value(
+            row$linkage_potential
+          ),
 
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Geography: ",
-            geography_text
+        "South Carolina Relevance" =
+          report_value(
+            row$south_carolina_relevance
           )
-        )
+      )
 
-        doc <- officer::body_add_par(
+      for (detail_name in names(key_details)) {
+
+        doc <- officer::body_add_fpar(
           doc,
-          paste0(
-            "Data type: ",
-            data_type_text
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Population: ",
-            population_text
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Years: ",
-            years_text
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Access burden: ",
-            access_burden_text
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Linkage potential: ",
-            linkage_text
-          )
-        )
-
-        # ----------------------------------------------------
-        # Limitations
-        # ----------------------------------------------------
-
-        limitations <- as_text(
-          row$limitations_cautions
-        )
-
-        if (nzchar(limitations)) {
-
-          doc <- officer::body_add_par(
-            doc,
-            paste0(
-              "Limitations: ",
-              limitations
+          officer::fpar(
+            officer::ftext(
+              paste0(
+                detail_name,
+                ": "
+              ),
+              prop = officer::fp_text(
+                bold = TRUE,
+                color = "#5B0008",
+                font.size = 9.5
+              )
+            ),
+            officer::ftext(
+              key_details[[detail_name]],
+              prop = officer::fp_text(
+                color = "#374151",
+                font.size = 9.5
+              )
+            ),
+            fp_p = officer::fp_par(
+              padding.bottom = 2
             )
           )
-        }
-
-        # ----------------------------------------------------
-        # Official source
-        # ----------------------------------------------------
-
-        official_url <- as_text(
-          row$official_url
         )
+      }
 
-        if (nzchar(official_url)) {
+      # ----------------------------------------------------------
+      # Why It Matched
+      # ----------------------------------------------------------
 
-          doc <- officer::body_add_par(
-            doc,
-            paste0(
-              "Official source: ",
-              official_url
+      doc <- officer::body_add_fpar(
+        doc,
+        officer::fpar(
+          officer::ftext(
+            "Why It Matched",
+            prop = officer::fp_text(
+              bold = TRUE,
+              color = "#5B0008",
+              font.size = 10
+            )
+          ),
+          fp_p = officer::fp_par(
+            padding.top = 6,
+            padding.bottom = 2
+          )
+        )
+      )
+
+      doc <- officer::body_add_fpar(
+        doc,
+        officer::fpar(
+          officer::ftext(
+            report_value(
+              row$why_matched
+            ),
+            prop = officer::fp_text(
+              color = "#374151",
+              font.size = 10
+            )
+          ),
+          fp_p = officer::fp_par(
+            padding.bottom = 5
+          )
+        )
+      )
+
+      # ----------------------------------------------------------
+      # Limitations
+      # ----------------------------------------------------------
+
+      limitations <- as_text(
+        row$limitations_cautions
+      )
+
+      if (nzchar(limitations)) {
+
+        doc <- officer::body_add_fpar(
+          doc,
+          officer::fpar(
+            officer::ftext(
+              "Limitations",
+              prop = officer::fp_text(
+                bold = TRUE,
+                color = "#5B0008",
+                font.size = 10
+              )
+            ),
+            fp_p = officer::fp_par(
+              padding.top = 6,
+              padding.bottom = 2
             )
           )
-        }
+        )
 
-        # ----------------------------------------------------
-        # Space before next source
-        # ----------------------------------------------------
-
-        doc <- officer::body_add_par(
+        doc <- officer::body_add_fpar(
           doc,
-          ""
+          officer::fpar(
+            officer::ftext(
+              limitations,
+              prop = officer::fp_text(
+                color = "#374151",
+                font.size = 10
+              )
+            ),
+            fp_p = officer::fp_par(
+              padding.bottom = 5
+            )
+          )
+        )
+      }
+
+          # ----------------------------------------------------------
+      # Official Source
+      # ----------------------------------------------------------
+
+      official_url <- as_text(
+        row$official_url
+      )
+
+      if (nzchar(official_url)) {
+
+        doc <- officer::body_add_fpar(
+          doc,
+          officer::fpar(
+            officer::ftext(
+              "Official Source",
+              prop = officer::fp_text(
+                bold = TRUE,
+                color = "#5B0008",
+                font.size = 10
+              )
+            ),
+            fp_p = officer::fp_par(
+              padding.top = 6,
+              padding.bottom = 2
+            )
+          )
+        )
+
+        doc <- officer::body_add_fpar(
+          doc,
+          officer::fpar(
+            officer::ftext(
+              official_url,
+              prop = officer::fp_text(
+                color = "#73000A",
+                underline = TRUE,
+                font.size = 9.5
+              )
+            ),
+            fp_p = officer::fp_par(
+              padding.bottom = 8
+            )
+          )
+        )
+      }
+
+      # ----------------------------------------------------------
+      # Separator
+      # ----------------------------------------------------------
+
+      separator <- officer::fpar(
+        officer::ftext(
+          "----------------------------------------",
+          prop = officer::fp_text(
+            color = "#D1D5DB",
+            font.size = 8
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.top = 4,
+          padding.bottom = 4
+        )
+      )
+
+      doc <- officer::body_add_fpar(
+        doc,
+        separator
+      )
+
+      # ----------------------------------------------------------
+      # New page after every 3 sources
+      # ----------------------------------------------------------
+
+      if (
+        i < nrow(df) &&
+        i %% 3 == 0
+      ) {
+
+        doc <- officer::body_add_break(
+          doc,
+          pos = "after"
         )
       }
     }
 
-    # ========================================================
-    # APPENDIX
-    # ========================================================
-
-    doc <- officer::body_add_par(
-      doc,
-      "Additional Source Details"
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      "The appendix preserves additional catalog fields for users who need more technical detail."
-    )
-
-    if (nrow(df) > 0) {
-
-      for (i in seq_len(nrow(df))) {
-
-        row <- df[i, ]
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            i,
-            ". ",
-            as_text(row$data_source)
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Category: ",
-            report_value(
-              row$category_for_filter
-            )
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Unit of analysis: ",
-            report_value(
-              row$unit_of_analysis
-            )
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "South Carolina relevance: ",
-            report_value(
-              row$south_carolina_relevance
-            )
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Common variables / measures: ",
-            report_value(
-              row$common_variables_measures
-            )
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Suggested use cases: ",
-            report_value(
-              row$suggested_use_cases
-            )
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Companion datasets: ",
-            report_value(
-              row$companion_datasets
-            )
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          paste0(
-            "Data governance notes: ",
-            report_value(
-              row$data_governance_notes
-            )
-          )
-        )
-
-        doc <- officer::body_add_par(
-          doc,
-          ""
-        )
-      }
-    }
-
-    # ========================================================
+    # ============================================================
     # RDCD NOTE
-    # ========================================================
+    # ============================================================
 
-    doc <- officer::body_add_par(
+    doc <- officer::body_add_fpar(
       doc,
-      "RDCD Note"
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      paste(
-        "This report supports data-source triage and feasibility review.",
-        "It does not replace IRB review, data-use agreements,",
-        "data governance review, or source-specific access requirements."
+      officer::fpar(
+        officer::ftext(
+          "RDCD Note",
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#73000A",
+            font.size = 15
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.top = 10,
+          padding.bottom = 5
+        )
       )
     )
 
-    # ========================================================
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          paste(
+            "This report supports data-source triage and feasibility review.",
+            "It does not replace IRB review, data-use agreements,",
+            "data governance review, or source-specific access requirements."
+          ),
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        )
+      )
+    )
+
+    # ============================================================
     # WRITE DOCUMENT
-    # ========================================================
+    # ============================================================
 
     print(
       doc,
       target = file
     )
 
-    # ========================================================
+    # ============================================================
     # VERIFY DOCUMENT
-    # ========================================================
+    # ============================================================
 
     if (!file.exists(file)) {
-
       stop(
-        "The Word report was not created."
+        "Word report was not created."
       )
     }
 
@@ -6013,18 +6262,18 @@ output$download_results <- downloadHandler(
       is.na(file.info(file)$size) ||
       file.info(file)$size <= 0
     ) {
-
       stop(
-        "The Word report was created but is empty."
+        "Word report was created but is empty."
       )
     }
   }
 )
+    
+ 
 
 # output$download_results <- downloadHandler(
 # 
 #   filename = function() {
-# 
 #     paste0(
 #       "RDCD_Data_Source_Discovery_Report_",
 #       Sys.Date(),
@@ -6032,56 +6281,38 @@ output$download_results <- downloadHandler(
 #     )
 #   },
 # 
+#   contentType =
+#     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+# 
 #   content = function(file) {
 # 
-#     # --------------------------------------------------------
-#     # Get current results
-#     # --------------------------------------------------------
+#     # ========================================================
+#     # CURRENT RESULTS
+#     # ========================================================
 # 
 #     df <- scored_results() |>
 #       dplyr::slice_head(
 #         n = min(10, input$top_n)
 #       )
 # 
-#     # --------------------------------------------------------
-#     # Start Word document
-#     # --------------------------------------------------------
+#     # ========================================================
+#     # START WORD DOCUMENT
+#     # ========================================================
 # 
 #     doc <- officer::read_docx()
 # 
-#     # --------------------------------------------------------
-#     # Title
-#     # --------------------------------------------------------
+#     # ========================================================
+#     # TITLE
+#     # ========================================================
 # 
-#     title_fp <- officer::fpar(
-#       officer::ftext(
-#         "RDCD Public Data Discovery Navigator",
-#         prop = officer::fp_text(
-#           bold = TRUE,
-#           color = "73000A",
-#           font.size = 22
-#         )
-#       )
-#     )
-# 
-#     doc <- officer::body_add_fpar(
+#     doc <- officer::body_add_par(
 #       doc,
-#       title_fp
+#       "RDCD Public Data Discovery Navigator"
 #     )
 # 
-#     subtitle_fp <- officer::fpar(
-#       officer::ftext(
-#         "Data Source Discovery Results",
-#         prop = officer::fp_text(
-#           color = "6B7280",
-#           font.size = 13
-#         )
-#       )
-#     )
-# 
-#     doc <- officer::body_add_fpar(
+#     doc <- officer::body_add_par(
 #       doc,
-#       subtitle_fp
+#       "Data Source Discovery Results"
 #     )
 # 
 #     doc <- officer::body_add_par(
@@ -6092,11 +6323,16 @@ output$download_results <- downloadHandler(
 #       )
 #     )
 # 
-#     # --------------------------------------------------------
-#     # Search context
-#     # --------------------------------------------------------
+#     doc <- officer::body_add_par(
+#       doc,
+#       ""
+#     )
 # 
-#     doc <- add_report_heading(
+#     # ========================================================
+#     # SEARCH CONTEXT
+#     # ========================================================
+# 
+#     doc <- officer::body_add_par(
 #       doc,
 #       "Search Context"
 #     )
@@ -6109,131 +6345,89 @@ output$download_results <- downloadHandler(
 #       question_text <- "No research question entered."
 #     }
 # 
-#     context_df <- data.frame(
-# 
-#       Field = c(
-#         "Research Question",
-#         "Keywords Used",
-#         "Minimum Match Score",
-#         "Results Included"
-#       ),
-# 
-#       Value = c(
-#         question_text,
-#         paste(
-#           search_terms(),
-#           collapse = ", "
-#         ),
-#         paste0(
-#           input$min_score,
-#           "%"
-#         ),
-#         nrow(df)
-#       ),
-# 
-#       stringsAsFactors = FALSE
+#     keywords_text <- paste(
+#       search_terms(),
+#       collapse = ", "
 #     )
 # 
-#     context_ft <- flextable::flextable(
-#       context_df
-#     )
+#     if (!nzchar(keywords_text)) {
+#       keywords_text <- "None entered."
+#     }
 # 
-#     context_ft <- flextable::theme_booktabs(
-#       context_ft
-#     )
-# 
-#     context_ft <- flextable::fontsize(
-#       context_ft,
-#       size = 9.5,
-#       part = "all"
-#     )
-# 
-#     context_ft <- flextable::bold(
-#       context_ft,
-#       j = 1,
-#       bold = TRUE,
-#       part = "body"
-#     )
-# 
-#     context_ft <- flextable::bg(
-#       context_ft,
-#       j = 1,
-#       bg = "F8F1F2",
-#       part = "body"
-#     )
-# 
-#     context_ft <- flextable::color(
-#       context_ft,
-#       j = 1,
-#       color = "5B0008",
-#       part = "body"
-#     )
-# 
-#     context_ft <- flextable::padding(
-#       context_ft,
-#       padding.top = 6,
-#       padding.bottom = 6,
-#       padding.left = 7,
-#       padding.right = 7,
-#       part = "all"
-#     )
-# 
-#     context_ft <- flextable::width(
-#       context_ft,
-#       j = 1,
-#       width = 1.7
-#     )
-# 
-#     context_ft <- flextable::width(
-#       context_ft,
-#       j = 2,
-#       width = 5
-#     )
-# 
-#     context_ft <- flextable::set_table_properties(
-#       context_ft,
-#       layout = "fixed",
-#       width = 1
-#     )
-# 
-#     doc <- officer::body_add_flextable(
+#     doc <- officer::body_add_par(
 #       doc,
-#       context_ft
-#     )
-# 
-#     # --------------------------------------------------------
-#     # Results summary
-#     # --------------------------------------------------------
-# 
-#     doc <- add_report_heading(
-#       doc,
-#       "Results Summary"
-#     )
-# 
-#     matching_sources <- nrow(
-#       scored_results()
-#     )
-# 
-#     highest_score <- if (
-#       matching_sources > 0
-#     ) {
-#       max(
-#         scored_results()$match_score,
-#         na.rm = TRUE
+#       paste0(
+#         "Research question: ",
+#         question_text
 #       )
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       paste0(
+#         "Keywords: ",
+#         keywords_text
+#       )
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       paste0(
+#         "Minimum match score: ",
+#         input$min_score,
+#         "%"
+#       )
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       ""
+#     )
+# 
+#     # ========================================================
+#     # RESULTS AT A GLANCE
+#     # ========================================================
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       "Results at a Glance"
+#     )
+# 
+#     total_matches <- nrow(df)
+# 
+#     highest_score <- if (total_matches > 0) {
+# 
+#       round(
+#         max(
+#           df$match_score,
+#           na.rm = TRUE
+#         )
+#       )
+# 
 #     } else {
 #       0
 #     }
 # 
-#     open_public_count <- if (
-#       matching_sources > 0
-#     ) {
+#     average_score <- if (total_matches > 0) {
+# 
+#       round(
+#         mean(
+#           df$match_score,
+#           na.rm = TRUE
+#         )
+#       )
+# 
+#     } else {
+#       0
+#     }
+# 
+#     open_public_count <- if (total_matches > 0) {
 # 
 #       sum(
-#         scored_results()$access_burden_for_filter == "Low" |
+#         df$access_burden_for_filter == "Low" |
 #           stringr::str_detect(
 #             tolower(
-#               scored_results()$access_level_standardized
+#               df$access_level_standardized
 #             ),
 #             "open|public"
 #           ),
@@ -6244,105 +6438,48 @@ output$download_results <- downloadHandler(
 #       0
 #     }
 # 
-#     average_score <- if (
-#       matching_sources > 0
-#     ) {
-# 
-#       round(
-#         mean(
-#           scored_results()$match_score,
-#           na.rm = TRUE
-#         )
-#       )
-# 
-#     } else {
-#       0
-#     }
-# 
-#     summary_df <- data.frame(
-# 
-#       Metric = c(
-#         "Matching Sources",
-#         "Average Match",
-#         "Highest Match",
-#         "Open / Public"
-#       ),
-# 
-#       Value = c(
-#         matching_sources,
-#         paste0(
-#           average_score,
-#           "%"
-#         ),
-#         paste0(
-#           round(highest_score),
-#           "%"
-#         ),
-#         open_public_count
-#       ),
-# 
-#       stringsAsFactors = FALSE
-#     )
-# 
-#     summary_ft <- flextable::flextable(
-#       summary_df
-#     )
-# 
-#     summary_ft <- flextable::theme_booktabs(
-#       summary_ft
-#     )
-# 
-#     summary_ft <- flextable::fontsize(
-#       summary_ft,
-#       size = 10,
-#       part = "all"
-#     )
-# 
-#     summary_ft <- flextable::bold(
-#       summary_ft,
-#       j = "Value",
-#       bold = TRUE,
-#       part = "body"
-#     )
-# 
-#     summary_ft <- flextable::color(
-#       summary_ft,
-#       j = "Value",
-#       color = "73000A",
-#       part = "body"
-#     )
-# 
-#     summary_ft <- flextable::align(
-#       summary_ft,
-#       j = "Value",
-#       align = "center",
-#       part = "body"
-#     )
-# 
-#     summary_ft <- flextable::padding(
-#       summary_ft,
-#       padding.top = 7,
-#       padding.bottom = 7,
-#       padding.left = 8,
-#       padding.right = 8,
-#       part = "all"
-#     )
-# 
-#     summary_ft <- flextable::set_table_properties(
-#       summary_ft,
-#       layout = "autofit"
-#     )
-# 
-#     doc <- officer::body_add_flextable(
+#     doc <- officer::body_add_par(
 #       doc,
-#       summary_ft
+#       paste0(
+#         total_matches,
+#         " matching sources"
+#       )
 #     )
 # 
-#     # --------------------------------------------------------
-#     # Top matching sources
-#     # --------------------------------------------------------
+#     doc <- officer::body_add_par(
+#       doc,
+#       paste0(
+#         average_score,
+#         "% average match"
+#       )
+#     )
 # 
-#     doc <- add_report_heading(
+#     doc <- officer::body_add_par(
+#       doc,
+#       paste0(
+#         highest_score,
+#         "% highest match"
+#       )
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       paste0(
+#         open_public_count,
+#         " open/public or low-burden sources"
+#       )
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       ""
+#     )
+# 
+#     # ========================================================
+#     # TOP MATCHING SOURCES
+#     # ========================================================
+# 
+#     doc <- officer::body_add_par(
 #       doc,
 #       "Top Matching Sources"
 #     )
@@ -6358,22 +6495,361 @@ output$download_results <- downloadHandler(
 # 
 #       for (i in seq_len(nrow(df))) {
 # 
-#         doc <- add_report_source(
+#         row <- df[i, ]
+# 
+#         # ----------------------------------------------------
+#         # Source name
+#         # ----------------------------------------------------
+# 
+#         doc <- officer::body_add_par(
 #           doc,
-#           df[i, ],
-#           i
+#           paste0(
+#             i,
+#             ". ",
+#             as_text(row$data_source)
+#           )
+#         )
+# 
+#         # ----------------------------------------------------
+#         # Match + access
+#         # ----------------------------------------------------
+# 
+#         score_text <- if (
+#           is.na(row$match_score)
+#         ) {
+# 
+#           "N/A"
+# 
+#         } else {
+# 
+#           paste0(
+#             round(row$match_score),
+#             "%"
+#           )
+#         }
+# 
+#         access_text <- report_value(
+#           row$access_level_standardized
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Match: ",
+#             score_text,
+#             "    |    Access: ",
+#             access_text
+#           )
+#         )
+# 
+#         # ----------------------------------------------------
+#         # Summary
+#         # ----------------------------------------------------
+# 
+#         summary_text <- as_text(
+#           row$main_data_type_use
+#         )
+# 
+#         if (!nzchar(summary_text)) {
+# 
+#           summary_text <- as_text(
+#             row$suggested_use_cases
+#           )
+#         }
+# 
+#         if (!nzchar(summary_text)) {
+# 
+#           summary_text =
+#             "No summary is available for this source."
+#         }
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Summary: ",
+#             summary_text
+#           )
+#         )
+# 
+#         # ----------------------------------------------------
+#         # Tags
+#         # ----------------------------------------------------
+# 
+#         tags_text <- make_report_tags(
+#           row
+#         )
+# 
+#         if (!nzchar(tags_text)) {
+#           tags_text <- "None specified"
+#         }
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Tags: ",
+#             tags_text
+#           )
+#         )
+# 
+#         # ----------------------------------------------------
+#         # Why this source matched
+#         # ----------------------------------------------------
+# 
+#         why_text <- report_value(
+#           row$why_matched
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Why it matched: ",
+#             why_text
+#           )
+#         )
+# 
+#         # ----------------------------------------------------
+#         # Key considerations
+#         # ----------------------------------------------------
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           "Key considerations"
+#         )
+# 
+#         geography_text <- report_value(
+#           row$geography_coverage
+#         )
+# 
+#         data_type_text <- report_value(
+#           row$data_type_for_filter
+#         )
+# 
+#         population_text <- report_value(
+#           row$population
+#         )
+# 
+#         years_text <- report_value(
+#           row$years_available
+#         )
+# 
+#         access_burden_text <- report_value(
+#           row$access_burden_for_filter
+#         )
+# 
+#         linkage_text <- report_value(
+#           row$linkage_potential
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Geography: ",
+#             geography_text
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Data type: ",
+#             data_type_text
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Population: ",
+#             population_text
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Years: ",
+#             years_text
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Access burden: ",
+#             access_burden_text
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Linkage potential: ",
+#             linkage_text
+#           )
+#         )
+# 
+#         # ----------------------------------------------------
+#         # Limitations
+#         # ----------------------------------------------------
+# 
+#         limitations <- as_text(
+#           row$limitations_cautions
+#         )
+# 
+#         if (nzchar(limitations)) {
+# 
+#           doc <- officer::body_add_par(
+#             doc,
+#             paste0(
+#               "Limitations: ",
+#               limitations
+#             )
+#           )
+#         }
+# 
+#         # ----------------------------------------------------
+#         # Official source
+#         # ----------------------------------------------------
+# 
+#         official_url <- as_text(
+#           row$official_url
+#         )
+# 
+#         if (nzchar(official_url)) {
+# 
+#           doc <- officer::body_add_par(
+#             doc,
+#             paste0(
+#               "Official source: ",
+#               official_url
+#             )
+#           )
+#         }
+# 
+#         # ----------------------------------------------------
+#         # Space before next source
+#         # ----------------------------------------------------
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           ""
 #         )
 #       }
 #     }
 # 
-#     # --------------------------------------------------------
-#     # Final note
-#     # --------------------------------------------------------
+#     # ========================================================
+#     # APPENDIX
+#     # ========================================================
 # 
 #     doc <- officer::body_add_par(
 #       doc,
-#       "RDCD Note",
-#       style = "heading 1"
+#       "Additional Source Details"
+#     )
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       "The appendix preserves additional catalog fields for users who need more technical detail."
+#     )
+# 
+#     if (nrow(df) > 0) {
+# 
+#       for (i in seq_len(nrow(df))) {
+# 
+#         row <- df[i, ]
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             i,
+#             ". ",
+#             as_text(row$data_source)
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Category: ",
+#             report_value(
+#               row$category_for_filter
+#             )
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Unit of analysis: ",
+#             report_value(
+#               row$unit_of_analysis
+#             )
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "South Carolina relevance: ",
+#             report_value(
+#               row$south_carolina_relevance
+#             )
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Common variables / measures: ",
+#             report_value(
+#               row$common_variables_measures
+#             )
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Suggested use cases: ",
+#             report_value(
+#               row$suggested_use_cases
+#             )
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Companion datasets: ",
+#             report_value(
+#               row$companion_datasets
+#             )
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           paste0(
+#             "Data governance notes: ",
+#             report_value(
+#               row$data_governance_notes
+#             )
+#           )
+#         )
+# 
+#         doc <- officer::body_add_par(
+#           doc,
+#           ""
+#         )
+#       }
+#     }
+# 
+#     # ========================================================
+#     # RDCD NOTE
+#     # ========================================================
+# 
+#     doc <- officer::body_add_par(
+#       doc,
+#       "RDCD Note"
 #     )
 # 
 #     doc <- officer::body_add_par(
@@ -6385,22 +6861,35 @@ output$download_results <- downloadHandler(
 #       )
 #     )
 # 
-#     # --------------------------------------------------------
-#     # Write file
-#     # --------------------------------------------------------
+#     # ========================================================
+#     # WRITE DOCUMENT
+#     # ========================================================
 # 
-#    print(
-#   doc,
-#   target = file
-# )
+#     print(
+#       doc,
+#       target = file
+#     )
 # 
-# if (!file.exists(file)) {
-#   stop("Word report was not created.")
-# }
+#     # ========================================================
+#     # VERIFY DOCUMENT
+#     # ========================================================
 # 
-# if (file.info(file)$size <= 0) {
-#   stop("Word report was created but is empty.")
-# }
+#     if (!file.exists(file)) {
+# 
+#       stop(
+#         "The Word report was not created."
+#       )
+#     }
+# 
+#     if (
+#       is.na(file.info(file)$size) ||
+#       file.info(file)$size <= 0
+#     ) {
+# 
+#       stop(
+#         "The Word report was created but is empty."
+#       )
+#     }
 #   }
 # )
 
@@ -6449,63 +6938,369 @@ output$download_summary <- downloadHandler(
 
   filename = function() {
     paste0(
-      "rdcd_data_fit_summary_",
+      "RDCD_Data_Fit_Summary_",
       Sys.Date(),
-      ".txt"
+      ".docx"
     )
   },
 
+  contentType =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
   content = function(file) {
+
+    # ============================================================
+    # GET SUMMARY
+    # ============================================================
 
     summary <- data_fit_summary()
 
     if (is.null(summary)) {
-
-      writeLines(
-        "No data fit recommendation is currently available.",
-        file
+      stop(
+        "No data fit recommendation is currently available. Please run a search first."
       )
-
-      return()
     }
 
-    lines <- c(
+    # ============================================================
+    # CREATE WORD DOCUMENT
+    # ============================================================
 
-      "RDCD DATA FIT RECOMMENDATION",
-      "============================",
-      "",
-      paste0(
-        "Primary recommendation: ",
-        summary$top_source,
-        " (",
-        summary$top_score,
-        "% match)"
+    doc <- officer::read_docx()
+
+    # ============================================================
+    # TITLE
+    # ============================================================
+
+    title_fp <- officer::fpar(
+      officer::ftext(
+        "RDCD Data Fit Recommendation",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 22
+        )
       ),
-      "",
-      "Why these sources matched:",
-      summary$why,
-      "",
-      "Tradeoffs to consider:",
-      summary$tradeoffs,
-      "",
-      "Strongest sources:",
-      summary$strongest,
-      "",
-      "Recommendation:",
-      summary$recommendation,
-      "",
-      "Caution:",
-      paste(
-        "This tool supports source triage and feasibility review.",
-        "Confirm source-specific access, governance, linkage,",
-        "and analytic requirements before formal data requests."
+      fp_p = officer::fp_par(
+        padding.bottom = 4
       )
     )
 
-    writeLines(
-      lines,
-      file
+    doc <- officer::body_add_fpar(
+      doc,
+      title_fp
     )
+
+    subtitle_fp <- officer::fpar(
+      officer::ftext(
+        "Data Source Discovery Summary",
+        prop = officer::fp_text(
+          color = "#6B7280",
+          font.size = 12
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.bottom = 3
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      subtitle_fp
+    )
+
+    date_fp <- officer::fpar(
+      officer::ftext(
+        paste0(
+          "Generated ",
+          Sys.Date()
+        ),
+        prop = officer::fp_text(
+          color = "#9CA3AF",
+          font.size = 9
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.bottom = 12
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      date_fp
+    )
+
+    # ============================================================
+    # PRIMARY RECOMMENDATION
+    # ============================================================
+
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Primary Recommendation",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 15
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 6
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      heading_fp
+    )
+
+    # Source name
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          summary$top_source,
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#1F2937",
+            font.size = 17
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 4,
+          keep_with_next = TRUE
+        )
+      )
+    )
+
+    # Match score
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          paste0(
+            summary$top_score,
+            "% match"
+          ),
+          prop = officer::fp_text(
+            bold = TRUE,
+            color = "#166534",
+            font.size = 11
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 8
+        )
+      )
+    )
+
+    # Recommendation text
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          summary$recommendation,
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10.5
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 12
+        )
+      )
+    )
+
+    # ============================================================
+    # WHY THESE SOURCES MATCHED
+    # ============================================================
+
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Why These Sources Matched",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 14
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 5
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      heading_fp
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          summary$why,
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 10
+        )
+      )
+    )
+
+    # ============================================================
+    # TRADEOFFS
+    # ============================================================
+
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Tradeoffs to Consider",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 14
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 5
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      heading_fp
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          summary$tradeoffs,
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 10
+        )
+      )
+    )
+
+    # ============================================================
+    # STRONGEST SOURCES
+    # ============================================================
+
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Strongest Sources",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 14
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 5
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      heading_fp
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          summary$strongest,
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 10
+        )
+      )
+    )
+
+    # ============================================================
+    # CAUTION
+    # ============================================================
+
+    heading_fp <- officer::fpar(
+      officer::ftext(
+        "Caution",
+        prop = officer::fp_text(
+          bold = TRUE,
+          color = "#73000A",
+          font.size = 14
+        )
+      ),
+      fp_p = officer::fp_par(
+        padding.top = 8,
+        padding.bottom = 5
+      )
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      heading_fp
+    )
+
+    doc <- officer::body_add_fpar(
+      doc,
+      officer::fpar(
+        officer::ftext(
+          paste(
+            "This tool supports source triage and feasibility review.",
+            "Confirm source-specific access, governance, linkage,",
+            "and analytic requirements before formal data requests."
+          ),
+          prop = officer::fp_text(
+            color = "#374151",
+            font.size = 10
+          )
+        ),
+        fp_p = officer::fp_par(
+          padding.bottom = 10
+        )
+      )
+    )
+
+    # ============================================================
+    # WRITE DOCUMENT
+    # ============================================================
+
+    print(
+      doc,
+      target = file
+    )
+
+    # ============================================================
+    # VERIFY
+    # ============================================================
+
+    if (!file.exists(file)) {
+      stop(
+        "The Data Fit Summary Word document was not created."
+      )
+    }
+
+    if (
+      is.na(file.info(file)$size) ||
+      file.info(file)$size <= 0
+    ) {
+      stop(
+        "The Data Fit Summary Word document was created but is empty."
+      )
+    }
   }
 )
 ```
