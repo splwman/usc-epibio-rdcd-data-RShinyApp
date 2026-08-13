@@ -30,6 +30,10 @@ options(shiny.maxRequestSize = 30 * 1024^2)
 
 DEFAULT_WORKBOOK <- "RDCD_Data_Source_Preparation_Template.xlsx"
 
+# Search input limits
+MAX_QUESTION_CHARS <- 500
+MAX_KEYWORD_CHARS <- 250
+
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0) y else x
 }
@@ -1997,6 +2001,25 @@ fluidPage(
         border-radius: 10px !important;
         border-color: #D1D5DB !important;
       }
+      
+      /* Search input character counters */
+.rdcd-app .search-char-count {
+  margin-top: -10px;
+  margin-bottom: 14px;
+  text-align: right;
+  font-size: 12px;
+  color: #6B7280;
+}
+
+.rdcd-app .search-char-count.limit-reached {
+  color: #991B1B;
+  font-weight: 700;
+}
+
+.rdcd-app .search-char-count.limit-near {
+  color: #92400E;
+  font-weight: 600;
+}
 
       .btn-primary {
         background-color: #73000A !important;
@@ -2752,22 +2775,28 @@ fluidPage(
 }
     ")),
 
-    tags$script(HTML("
-      Shiny.addCustomMessageHandler('rdcdToggleSearch', function(disabled) {
+tags$script(HTML("
 
-        var btn = document.getElementById('run_search');
-        var busy = document.getElementById('search_loading_indicator');
+  // -------------------------------------------------
+  // Existing Run Search loading behavior
+  // -------------------------------------------------
 
-        if (btn) {
-          btn.disabled = disabled;
-        }
+  Shiny.addCustomMessageHandler('rdcdToggleSearch', function(disabled) {
 
-        if (busy) {
-          busy.style.display = disabled ? 'block' : 'none';
-        }
+    var btn = document.getElementById('run_search');
+    var busy = document.getElementById('search_loading_indicator');
 
-      });
-    "))
+    if (btn) {
+      btn.disabled = disabled;
+    }
+
+    if (busy) {
+      busy.style.display = disabled ? 'block' : 'none';
+    }
+
+  });
+
+"))
   ),
 
   div(
@@ -2841,19 +2870,26 @@ uiOutput("dashboard_summary"),
           "Search"
         ),
 
-        textAreaInput(
-          "question",
-          "Research Question",
-          value = "",
-          rows = 4,
-          width = "100%"
-        ),
+       textAreaInput(
+  "question",
+  "Research Question",
+  value = "",
+  rows = 4,
+  width = "100%",
+  placeholder = "Enter your research question..."
+),
 
-        textInput(
-          "keyword_string",
-          "Keywords",
-          value = ""
-        ),
+uiOutput("question_char_count"),
+
+textInput(
+  "keyword_string",
+  "Keywords",
+  value = "",
+  placeholder = "Enter keywords separated by commas...",
+  width = "100%"
+),
+
+uiOutput("keyword_char_count"),
 
         checkboxInput(
   "use_category_expansion",
@@ -3250,14 +3286,48 @@ search_terms <- eventReactive(
   input$run_search,
   {
 
+    question_text <- as_text(input$question)
+    keyword_text <- as_text(input$keyword_string)
+
+    # Server-side character validation
+    if (nchar(question_text) > MAX_QUESTION_CHARS) {
+      showNotification(
+        paste0(
+          "Research Question must be ",
+          MAX_QUESTION_CHARS,
+          " characters or fewer."
+        ),
+        type = "error",
+        duration = 6
+      )
+      return(character())
+    }
+
+    if (nchar(keyword_text) > MAX_KEYWORD_CHARS) {
+      showNotification(
+        paste0(
+          "Keywords must be ",
+          MAX_KEYWORD_CHARS,
+          " characters or fewer."
+        ),
+        type = "error",
+        duration = 6
+      )
+      return(character())
+    }
+
     question_terms <- unique(c(
-      parse_search_terms(input$question),
-      extract_words(input$question)
+      parse_search_terms(question_text),
+      extract_words(question_text)
     ))
 
     keyword_terms <- parse_search_terms(
-      input$keyword_string
+      keyword_text
     )
+
+    # keyword_terms <- parse_search_terms(
+    #   input$keyword_string
+    # )
 
     base_terms <- unique(c(
       question_terms,
@@ -3331,6 +3401,98 @@ scored_results <- eventReactive(
   },
   ignoreNULL = FALSE
 )
+
+# -------------------------------------------------
+# Search input character counters
+# -------------------------------------------------
+
+output$question_char_count <- renderUI({
+
+  n <- nchar(input$question %||% "")
+
+  counter_class <- if (n >= MAX_QUESTION_CHARS) {
+    "search-char-count limit-reached"
+  } else if (n >= MAX_QUESTION_CHARS * 0.9) {
+    "search-char-count limit-near"
+  } else {
+    "search-char-count"
+  }
+
+  tags$div(
+    class = counter_class,
+    paste0(
+      n,
+      " / ",
+      MAX_QUESTION_CHARS,
+      " characters"
+    )
+  )
+})
+
+
+output$keyword_char_count <- renderUI({
+
+  n <- nchar(input$keyword_string %||% "")
+
+  counter_class <- if (n >= MAX_KEYWORD_CHARS) {
+    "search-char-count limit-reached"
+  } else if (n >= MAX_KEYWORD_CHARS * 0.9) {
+    "search-char-count limit-near"
+  } else {
+    "search-char-count"
+  }
+
+  tags$div(
+    class = counter_class,
+    paste0(
+      n,
+      " / ",
+      MAX_KEYWORD_CHARS,
+      " characters"
+    )
+  )
+})
+
+# -------------------------------------------------
+# Enforce search input character limits
+# -------------------------------------------------
+
+observeEvent(input$question, {
+
+  question_text <- input$question %||% ""
+
+  if (nchar(question_text) > MAX_QUESTION_CHARS) {
+
+    updateTextAreaInput(
+      session,
+      "question",
+      value = substr(
+        question_text,
+        1,
+        MAX_QUESTION_CHARS
+      )
+    )
+  }
+})
+
+
+observeEvent(input$keyword_string, {
+
+  keyword_text <- input$keyword_string %||% ""
+
+  if (nchar(keyword_text) > MAX_KEYWORD_CHARS) {
+
+    updateTextInput(
+      session,
+      "keyword_string",
+      value = substr(
+        keyword_text,
+        1,
+        MAX_KEYWORD_CHARS
+      )
+    )
+  }
+})
 
 
 output$dashboard_summary <- renderUI({
