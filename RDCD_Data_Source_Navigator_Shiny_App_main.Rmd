@@ -12,8 +12,7 @@ runtime: shiny
 ```{r setup, include=FALSE}
 required_pkgs <- c(
   "shiny", "bslib", "readxl", "dplyr", "tidyr", "stringr", "purrr",
-  "DT", "ggplot2", "glue", "tibble", "tools",
-  "officer", "flextable", "htmltools", "openxlsx"
+  "DT", "tibble", "officer", "ggplot2", "flextable", "htmltools", "openxlsx"
 )
 
 missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
@@ -345,27 +344,6 @@ contains_any <- function(text, terms) {
   })
 }
 
-count_term_hits <- function(text, terms) {
-  if (length(terms) == 0) return(rep(0, length(text)))
-  purrr::map_int(text, function(txt) {
-    sum(stringr::str_detect(txt, stringr::fixed(terms, ignore_case = TRUE)))
-  })
-}
-
-find_matched_terms <- function(text, terms, max_terms = 12) {
-  if (length(terms) == 0 || is.null(text) || length(text) == 0) return("")
-
-  txt <- tolower(paste(text, collapse = " "))
-
-  hits <- terms[vapply(
-    terms,
-    function(term) stringr::str_detect(txt, stringr::fixed(term, ignore_case = TRUE)),
-    logical(1)
-  )]
-
-  paste(head(unique(hits), max_terms), collapse = "; ")
-}
-
 safe_col <- function(df, nm, default = "") {
   if (nm %in% names(df)) as_text(df[[nm]]) else rep(default, nrow(df))
 }
@@ -400,88 +378,6 @@ infer_data_type <- function(text) {
   )
 }
 
-#7/9 improvement
-concept_rules <- tibble::tribble(
-  ~concept, ~query_pattern, ~source_pattern, ~boost, ~penalty,
-  
-  "COVID-19",
-  "\\bcovid\\b|covid ?19|covid19|sars[- ]?cov[- ]?2|sarscov2|coronavirus",
-  "\\bcovid\\b|covid ?19|covid19|sars[- ]?cov[- ]?2|sarscov2|coronavirus|n3c",
-  25, 12,
-
-  "Cancer",
-  "cancer|oncology|tumou?r|neoplasm|malignan",
-  "cancer|oncology|seer|tcga|tcia",
-  30, 15,
-
-  "Cardiovascular",
-  "heart disease|cardiovascular|stroke|hypertension",
-  "heart|cardiovascular|stroke|hypertension|cdc wonder|brfss|nhanes",
-  25, 12,
-
-  "Maternal",
-  "maternal|pregnan|birth|prenatal|infant",
-  "maternal|pregnan|birth|prams|nvss",
-  25, 15,
-
-  "Mental Health",
-  "mental health|depression|anxiety|suicide",
-  "mental health|depression|nsduh|mh-cld",
-  25, 12,
-
-  "Substance Use",
-  "opioid|drug|substance|alcohol|tobacco|overdose",
-  "opioid|drug|substance|teds|nsduh|samhsa",
-  25, 12,
-
-  "Imaging",
-  "mri|ct|radiology|imaging|brain",
-  "mri|ct|radiology|imaging|adni|tcia",
-  25, 15,
-
-  "EHR",
-  "ehr|electronic health record|clinical|icu|encounter",
-  "ehr|clinical|mimic|n3c|all of us",
-  25, 15,
-
-  "Claims",
-  "medicare|medicaid|claims|payment|spending",
-  "cms|resdac|claims|medicare|medicaid|meps",
-  25, 10,
-
-  "Environment",
-  "air pollution|air quality|ozone|pm2\\.5|environment",
-  "epa|tracking|air quality|environment",
-  20, 10,
-
-  "SDOH",
-  "social vulnerability|poverty|income|housing|food access",
-  "acs|svi|county health rankings|food environment",
-  20, 8
-)
-
-score_concepts <- function(query_text, source_text, rules = concept_rules) {
-  query_text <- tolower(query_text)
-  source_text <- tolower(source_text)
-
-  boost_total <- 0
-  penalty_total <- 0
-
-  for (i in seq_len(nrow(rules))) {
-    query_hit <- stringr::str_detect(query_text, stringr::regex(rules$query_pattern[i], ignore_case = TRUE))
-    source_hit <- stringr::str_detect(source_text, stringr::regex(rules$source_pattern[i], ignore_case = TRUE))
-
-    if (isTRUE(query_hit) && isTRUE(source_hit)) {
-      boost_total <- boost_total + rules$boost[i]
-    }
-
-    if (isTRUE(query_hit) && !isTRUE(source_hit)) {
-      penalty_total <- penalty_total + rules$penalty[i]
-    }
-  }
-
-  list(boost = boost_total, penalty = penalty_total)
-}
 
 #added for 7/9 fix to improve scoring
 
@@ -626,6 +522,30 @@ prepare_catalog <- function(df) {
     limitations_cautions_norm = normalize_search_terms(limitations_cautions),
     rdcd_consultation_notes_norm = normalize_search_terms(rdcd_consultation_notes),
 
+    geography_search = normalize_text(
+  paste(
+    geography_coverage,
+    geographic_unit,
+    sep = " "
+  )
+),
+
+data_type_search = normalize_text(
+  paste(
+    data_type_standardized,
+    main_data_type_use,
+    sep = " "
+  )
+),
+
+population_norm = normalize_text(
+  population
+),
+
+common_variables_measures_norm = normalize_text(
+  common_variables_measures
+),
+
 
       category_for_filter = dplyr::if_else(
         nchar(primary_category) > 0,
@@ -644,120 +564,87 @@ prepare_catalog <- function(df) {
   df
 }
 
-# ============================================================
-# Generic term-level relevance scoring
-# ============================================================
+score_terms_against_catalog <- function(df, terms) {
 
-score_term_against_source <- function(
-  term,
-  primary_category,
-  keywords,
-  secondary_categories,
-  common_variables,
-  suggested_use_cases,
-  population,
-  geography,
-  data_type,
-  data_source,
-  general_search_text
-) {
-
-  term <- normalize_search_term(term)
-
-  if (!nzchar(term)) {
-    return(0)
+  if (length(terms) == 0 || nrow(df) == 0) {
+    return(rep(0, nrow(df)))
   }
 
-  # Normalize each structured field
-  primary_category <- normalize_text(primary_category)
-  keywords <- normalize_text(keywords)
-  secondary_categories <- normalize_text(secondary_categories)
-  common_variables <- normalize_text(common_variables)
-  suggested_use_cases <- normalize_text(suggested_use_cases)
-  population <- normalize_text(population)
-  geography <- normalize_text(geography)
-  data_type <- normalize_text(data_type)
-  data_source <- normalize_text(data_source)
-  general_search_text <- normalize_text(general_search_text)
+  term_scores <- lapply(terms, function(term) {
 
-  # ----------------------------------------------------------
-  # Field-specific evidence
-  #
-  # More specific / curated fields receive more weight.
-  # ----------------------------------------------------------
+    term <- normalize_search_term(term)
 
-  primary_match <- stringr::str_detect(
-    primary_category,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    if (!nzchar(term)) {
+      return(rep(0, nrow(df)))
+    }
 
-  keyword_match <- stringr::str_detect(
-    keywords,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    primary_match <- stringr::str_detect(
+      df$primary_category_norm,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  secondary_match <- stringr::str_detect(
-    secondary_categories,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    keyword_match <- stringr::str_detect(
+      df$keywords_for_search_norm,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  variable_match <- stringr::str_detect(
-    common_variables,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    secondary_match <- stringr::str_detect(
+      df$secondary_categories_tags_norm,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  use_case_match <- stringr::str_detect(
-    suggested_use_cases,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    variable_match <- stringr::str_detect(
+      df$common_variables_measures_norm,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  population_match <- stringr::str_detect(
-    population,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    use_case_match <- stringr::str_detect(
+      df$suggested_use_cases_norm,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  geography_match <- stringr::str_detect(
-    geography,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    population_match <- stringr::str_detect(
+      df$population_norm,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  data_type_match <- stringr::str_detect(
-    data_type,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    geography_match <- stringr::str_detect(
+      df$geography_search,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  data_source_match <- stringr::str_detect(
-    data_source,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    data_type_match <- stringr::str_detect(
+      df$data_type_search,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  general_match <- stringr::str_detect(
-    general_search_text,
-    stringr::fixed(term, ignore_case = TRUE)
-  )
+    data_source_match <- stringr::str_detect(
+      df$data_source_norm,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  # ----------------------------------------------------------
-  # Determine strongest evidence for this term
-  #
-  # We use the strongest field rather than adding every match.
-  # This prevents one common term from accumulating points
-  # simply because it appears in many fields.
-  # ----------------------------------------------------------
+    general_match <- stringr::str_detect(
+      df$search_text_normalized,
+      stringr::fixed(term, ignore_case = TRUE)
+    )
 
-  evidence_scores <- c(
-    primary_category = ifelse(primary_match, 1.00, 0),
-    keywords = ifelse(keyword_match, 0.90, 0),
-    common_variables = ifelse(variable_match, 0.88, 0),
-    secondary_categories = ifelse(secondary_match, 0.80, 0),
-    population = ifelse(population_match, 0.80, 0),
-    geography = ifelse(geography_match, 0.80, 0),
-    data_type = ifelse(data_type_match, 0.75, 0),
-    suggested_use_cases = ifelse(use_case_match, 0.60, 0),
-    data_source = ifelse(data_source_match, 0.50, 0),
-    general_text = ifelse(general_match, 0.20, 0)
-  )
+    pmax(
+      ifelse(primary_match, 1.00, 0),
+      ifelse(keyword_match, 0.90, 0),
+      ifelse(variable_match, 0.88, 0),
+      ifelse(secondary_match, 0.80, 0),
+      ifelse(population_match, 0.80, 0),
+      ifelse(geography_match, 0.80, 0),
+      ifelse(data_type_match, 0.75, 0),
+      ifelse(use_case_match, 0.60, 0),
+      ifelse(data_source_match, 0.50, 0),
+      ifelse(general_match, 0.20, 0)
+    )
+  })
 
-  max(evidence_scores)
+  matrix_scores <- do.call(cbind, term_scores)
+
+  rowMeans(matrix_scores)
 }
 
 
@@ -777,37 +664,30 @@ score_catalog <- function(
   }
 
   # ------------------------------------------------------------
-  # Clean search terms
+  # Normalize and clean terms once
   # ------------------------------------------------------------
 
   original_terms <- unique(
-    original_terms[
-      nzchar(original_terms)
-    ]
-  )
-
-  expanded_terms <- unique(
-    expanded_terms[
-      nzchar(expanded_terms)
-    ]
-  )
-
-  # Original terms are the primary evidence.
-  original_terms <- unique(
     vapply(
-      original_terms,
+      original_terms[nzchar(original_terms)],
       normalize_search_term,
-      character(1)
+      character(1),
+      USE.NAMES = FALSE
     )
   )
 
+  original_terms <- original_terms[nzchar(original_terms)]
+
   expanded_terms <- unique(
     vapply(
-      expanded_terms,
+      expanded_terms[nzchar(expanded_terms)],
       normalize_search_term,
-      character(1)
+      character(1),
+      USE.NAMES = FALSE
     )
   )
+
+  expanded_terms <- expanded_terms[nzchar(expanded_terms)]
 
   expanded_terms <- setdiff(
     expanded_terms,
@@ -815,127 +695,125 @@ score_catalog <- function(
   )
 
   source_terms <- unique(
-    c(
-      original_terms,
-      expanded_terms
-    )
+    c(original_terms, expanded_terms)
   )
 
   # ------------------------------------------------------------
-  # Helper for term-level scoring
+  # Cheap filters FIRST
   # ------------------------------------------------------------
 
-  score_source_for_terms <- function(
-    row_index,
-    terms
-  ) {
+  if (length(category_filter) > 0) {
+    df <- df |>
+      dplyr::filter(
+        category_for_filter %in% category_filter
+      )
+  }
 
-    if (length(terms) == 0) {
-      return(0)
-    }
+  if (length(data_type_filter) > 0) {
+    df <- df |>
+      dplyr::filter(
+        data_type_for_filter %in% data_type_filter
+      )
+  }
 
-    scores <- vapply(
-      terms,
-      function(term) {
+  if (length(geography_filter) > 0) {
 
-        score_term_against_source(
-          term = term,
-
-          primary_category =
-            df$primary_category[row_index],
-
-          keywords =
-            df$keywords_for_search[row_index],
-
-          secondary_categories =
-            df$secondary_categories_tags[row_index],
-
-          common_variables =
-            df$common_variables_measures[row_index],
-
-          suggested_use_cases =
-            df$suggested_use_cases[row_index],
-
-          population =
-            df$population[row_index],
-
-          geography =
-            paste(
-              df$geography_coverage[row_index],
-              df$geographic_unit[row_index],
-              sep = " "
-            ),
-
-          data_type =
-            paste(
-              df$data_type_standardized[row_index],
-              df$main_data_type_use[row_index],
-              sep = " "
-            ),
-
-          data_source =
-            df$data_source[row_index],
-
-          general_search_text =
-            df$search_text_normalized[row_index]
-        )
-
-      },
-      numeric(1)
+    geography_terms <- normalize_text(
+      geography_filter
     )
 
-    mean(scores)
+    geography_text <- normalize_text(
+      paste(
+        df$geography_coverage,
+        df$geographic_unit,
+        sep = " "
+      )
+    )
+
+    df <- df[
+      contains_any(
+        geography_text,
+        geography_terms
+      ),
+      ,
+      drop = FALSE
+    ]
+  }
+
+  if (length(access_filter) > 0) {
+    df <- df |>
+      dplyr::filter(
+        contains_any(
+          access_level_standardized,
+          access_filter
+        )
+      )
+  }
+
+  if (isTRUE(open_only)) {
+    df <- df |>
+      dplyr::filter(
+        access_burden_for_filter == "Low" |
+          stringr::str_detect(
+            tolower(access_level_standardized),
+            "open|public"
+          )
+      )
+  }
+
+  if (nrow(df) == 0) {
+    return(df)
   }
 
   # ------------------------------------------------------------
-  # Original-term score
-  #
-  # Every term the user actually entered must contribute.
-  # We average the evidence across terms rather than adding
-  # unlimited points.
+  # Candidate filtering BEFORE expensive scoring
   # ------------------------------------------------------------
 
-  original_score <- purrr::map_dbl(
-    seq_len(nrow(df)),
-    ~ score_source_for_terms(
-      .x,
-      original_terms
+  if (length(source_terms) > 0) {
+
+    candidate_mask <- contains_any(
+      df$search_text_normalized,
+      source_terms
     )
+
+    df <- df[
+      candidate_mask,
+      ,
+      drop = FALSE
+    ]
+  }
+
+  if (nrow(df) == 0) {
+    return(df)
+  }
+
+  # ------------------------------------------------------------
+  # Score original terms
+  # ------------------------------------------------------------
+
+  original_score <- score_terms_against_catalog(
+    df,
+    original_terms
   )
 
   # ------------------------------------------------------------
-  # Expanded-term score
-  #
-  # Automatically generated terms provide supporting evidence
-  # only. They can never outweigh the original query.
+  # Score expanded terms
   # ------------------------------------------------------------
 
-  expanded_score <- purrr::map_dbl(
-    seq_len(nrow(df)),
-    ~ score_source_for_terms(
-      .x,
-      expanded_terms
-    )
+  expanded_score <- score_terms_against_catalog(
+    df,
+    expanded_terms
   )
 
   # ------------------------------------------------------------
-  # Final search relevance
-  #
-  # 85% original terms
-  # 15% expanded terms
-  #
-  # This means expansion helps, but cannot dominate.
+  # Final relevance score
   # ------------------------------------------------------------
 
   match_score <- if (length(expanded_terms) > 0) {
-
     (original_score * 85) +
       (expanded_score * 15)
-
   } else {
-
     original_score * 100
-
   }
 
   match_score <- round(
@@ -951,8 +829,6 @@ score_catalog <- function(
 
   # ------------------------------------------------------------
   # Keyword-hit diagnostic
-  #
-  # ORIGINAL terms only.
   # ------------------------------------------------------------
 
   keyword_hits_vec <- purrr::map_int(
@@ -963,7 +839,6 @@ score_catalog <- function(
         vapply(
           original_terms,
           function(term) {
-
             stringr::str_detect(
               txt,
               stringr::fixed(
@@ -971,12 +846,10 @@ score_catalog <- function(
                 ignore_case = TRUE
               )
             )
-
           },
           logical(1)
         )
       )
-
     }
   )
 
@@ -992,7 +865,6 @@ score_catalog <- function(
         vapply(
           source_terms,
           function(term) {
-
             stringr::str_detect(
               txt,
               stringr::fixed(
@@ -1000,7 +872,6 @@ score_catalog <- function(
                 ignore_case = TRUE
               )
             )
-
           },
           logical(1)
         )
@@ -1013,85 +884,23 @@ score_catalog <- function(
         ),
         collapse = "; "
       )
-
-    }
-  )
-
-  # ------------------------------------------------------------
-  # Determine whether there is a strong original-term match
-  # ------------------------------------------------------------
-
-  original_exact_score <- purrr::map_dbl(
-    seq_len(nrow(df)),
-    function(i) {
-
-      if (length(original_terms) == 0) {
-        return(0)
-      }
-
-      scores <- vapply(
-        original_terms,
-        function(term) {
-
-          score_term_against_source(
-            term = term,
-
-            primary_category =
-              df$primary_category[i],
-
-            keywords =
-              df$keywords_for_search[i],
-
-            secondary_categories =
-              df$secondary_categories_tags[i],
-
-            common_variables =
-              df$common_variables_measures[i],
-
-            suggested_use_cases =
-              df$suggested_use_cases[i],
-
-            population =
-              df$population[i],
-
-            geography =
-              paste(
-                df$geography_coverage[i],
-                df$geographic_unit[i],
-                sep = " "
-              ),
-
-            data_type =
-              paste(
-                df$data_type_standardized[i],
-                df$main_data_type_use[i],
-                sep = " "
-              ),
-
-            data_source =
-              df$data_source[i],
-
-            general_search_text =
-              df$search_text_normalized[i]
-          )
-
-        },
-        numeric(1)
-      )
-
-      mean(scores)
-
     }
   )
 
   # ------------------------------------------------------------
   # Build output
+  #
+  # IMPORTANT:
+  # original_exact_score used to repeat the expensive
+  # original-term scoring. It was mathematically identical
+  # to original_score, so reuse original_score.
   # ------------------------------------------------------------
+
+  original_exact_score <- original_score
 
   out <- df |>
     dplyr::mutate(
 
-      # Keep these fields for diagnostics / existing UI
       original_match_score =
         round(original_score * 100, 1),
 
@@ -1111,10 +920,7 @@ score_catalog <- function(
         match_score,
 
       concept_score =
-        round(
-          original_score * 100,
-          1
-        ),
+        round(original_score * 100, 1),
 
       concept_hit =
         original_score > 0,
@@ -1132,50 +938,7 @@ score_catalog <- function(
         round(original_exact_score * 100),
         "%."
       )
-
     )
-
-  # ------------------------------------------------------------
-  # Apply access filter
-  # ------------------------------------------------------------
-
-  if (length(access_filter) > 0) {
-
-    out <- out |>
-      dplyr::filter(
-        contains_any(
-          access_level_standardized,
-          access_filter
-        )
-      )
-
-  }
-
-  # ------------------------------------------------------------
-  # Apply open/public filter
-  # ------------------------------------------------------------
-
-  if (isTRUE(open_only)) {
-
-    out <- out |>
-      dplyr::filter(
-
-        access_burden_for_filter == "Low" |
-
-          stringr::str_detect(
-            tolower(
-              access_level_standardized
-            ),
-            "open|public"
-          )
-
-      )
-
-  }
-
-  # ------------------------------------------------------------
-  # Sort
-  # ------------------------------------------------------------
 
   out |>
     dplyr::arrange(
@@ -1317,299 +1080,6 @@ make_report_tags <- function(row) {
   }
 
   paste(tags_vec, collapse = "  |  ")
-}
-
-
-add_report_heading <- function(doc, text) {
-
-  doc <- officer::body_add_par(
-    doc,
-    text,
-    style = "heading 1"
-  )
-
-  doc
-}
-
-
-add_report_source <- function(doc, row, rank_number) {
-
-  # ----------------------------------------------------------
-  # Source heading
-  # ----------------------------------------------------------
-
-  source_title <- paste0(
-    rank_number,
-    ". ",
-    as_text(row$data_source)
-  )
-
-  doc <- officer::body_add_par(
-    doc,
-    source_title,
-    style = "heading 2"
-  )
-
-  # ----------------------------------------------------------
-  # Match / access line
-  # ----------------------------------------------------------
-
-  match_text <- make_report_score_label(row$match_score)
-
-  access_text <- make_report_access_label(
-    row$access_level_standardized
-  )
-
-  meta <- paste0(
-    match_text,
-    "   |   ",
-    access_text
-  )
-
-  meta_fp <- officer::fpar(
-    officer::ftext(
-      meta,
-      prop = officer::fp_text(
-        bold = TRUE,
-        color = "73000A",
-        font.size = 10
-      )
-    )
-  )
-
-  doc <- officer::body_add_fpar(
-    doc,
-    meta_fp
-  )
-
-  # ----------------------------------------------------------
-  # Summary
-  # ----------------------------------------------------------
-
-  summary_text <- report_value(
-    row$main_data_type_use
-  )
-
-  if (
-    !nzchar(as_text(row$main_data_type_use))
-  ) {
-    summary_text <- report_value(
-      row$suggested_use_cases
-    )
-  }
-
-  doc <- officer::body_add_par(
-    doc,
-    "Summary",
-    style = "heading 3"
-  )
-
-  doc <- officer::body_add_par(
-    doc,
-    summary_text
-  )
-
-  # ----------------------------------------------------------
-  # Key details table
-  # ----------------------------------------------------------
-
-  detail_df <- data.frame(
-    Field = c(
-      "Tags",
-      "Category",
-      "Data Type",
-      "Population",
-      "Geography",
-      "Unit of Analysis",
-      "Years Available",
-      "Access Burden",
-      "Linkage Potential",
-      "South Carolina Relevance"
-    ),
-
-    Value = c(
-      make_report_tags(row),
-      report_value(row$category_for_filter),
-      report_value(row$data_type_for_filter),
-      report_value(row$population),
-      report_value(row$geography_coverage),
-      report_value(row$unit_of_analysis),
-      report_value(row$years_available),
-      report_value(row$access_burden_for_filter),
-      report_value(row$linkage_potential),
-      report_value(row$south_carolina_relevance)
-    ),
-
-    stringsAsFactors = FALSE
-  )
-
-  ft <- flextable::flextable(detail_df)
-
-  ft <- flextable::theme_booktabs(ft)
-
-  ft <- flextable::fontsize(
-    ft,
-    size = 9.5,
-    part = "all"
-  )
-
-  ft <- flextable::bold(
-    ft,
-    j = 1,
-    bold = TRUE,
-    part = "body"
-  )
-
-  ft <- flextable::color(
-    ft,
-    j = 1,
-    color = "5B0008",
-    part = "body"
-  )
-
-  ft <- flextable::bg(
-    ft,
-    j = 1,
-    bg = "F8F1F2",
-    part = "body"
-  )
-
-  ft <- flextable::padding(
-    ft,
-    padding.top = 6,
-    padding.bottom = 6,
-    padding.left = 7,
-    padding.right = 7,
-    part = "all"
-  )
-
-  ft <- flextable::width(
-    ft,
-    j = 1,
-    width = 1.55
-  )
-
-  ft <- flextable::width(
-    ft,
-    j = 2,
-    width = 5.15
-  )
-
-  ft <- flextable::set_table_properties(
-    ft,
-    layout = "fixed",
-    width = 1
-  )
-
-  ft <- flextable::align(
-    ft,
-    j = 1,
-    align = "left",
-    part = "all"
-  )
-
-  ft <- flextable::align(
-    ft,
-    j = 2,
-    align = "left",
-    part = "all"
-  )
-
-  doc <- officer::body_add_flextable(
-    doc,
-    ft
-  )
-
-  # ----------------------------------------------------------
-  # Why it matched
-  # ----------------------------------------------------------
-
-  doc <- officer::body_add_par(
-    doc,
-    "Why it matched",
-    style = "heading 3"
-  )
-
-  why_text <- report_value(
-    row$why_matched
-  )
-
-  doc <- officer::body_add_par(
-    doc,
-    why_text
-  )
-
-  # ----------------------------------------------------------
-  # Limitations
-  # ----------------------------------------------------------
-
-  limitations <- as_text(
-    row$limitations_cautions
-  )
-
-  if (nzchar(limitations)) {
-
-    doc <- officer::body_add_par(
-      doc,
-      "Limitations",
-      style = "heading 3"
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      limitations
-    )
-  }
-
-  # ----------------------------------------------------------
-  # Official source
-  # ----------------------------------------------------------
-
-  official_url <- as_text(
-    row$official_url
-  )
-
-  if (nzchar(official_url)) {
-
-    doc <- officer::body_add_par(
-      doc,
-      "Official source",
-      style = "heading 3"
-    )
-
-    link_fp <- officer::fpar(
-      officer::hyperlink_ftext(
-        x = "Open official source",
-        url = official_url,
-        prop = officer::fp_text(
-          color = "73000A",
-          underline = TRUE,
-          font.size = 10
-        )
-      )
-    )
-
-    doc <- officer::body_add_fpar(
-      doc,
-      link_fp
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      official_url
-    )
-  }
-
-  # ----------------------------------------------------------
-  # Space before next source
-  # ----------------------------------------------------------
-
-  doc <- officer::body_add_par(
-    doc,
-    ""
-  )
-
-  doc
 }
 
 # ============================================================
@@ -1825,309 +1295,6 @@ add_report_hyperlink <- function(
   )
 }
 
-
-add_report_source_card <- function(
-  doc,
-  row,
-  rank_number,
-  total_sources
-) {
-
-  # ----------------------------------------------------------
-  # Source title
-  # ----------------------------------------------------------
-
-  source_title <- paste0(
-    rank_number,
-    ". ",
-    as_text(row$data_source)
-  )
-
-  doc <- officer::body_add_fpar(
-    doc,
-    officer::fpar(
-      officer::ftext(
-        source_title,
-        prop = officer::fp_text(
-          bold = TRUE,
-          color = "1F2937",
-          font.size = 14
-        )
-      ),
-      fp_p = officer::fp_par(
-        keep_with_next = TRUE,
-        space_before = 12,
-        space_after = 4
-      )
-    )
-  )
-
-  # ----------------------------------------------------------
-  # Score + access
-  # ----------------------------------------------------------
-
-  doc <- add_report_badge_line(
-    doc,
-    row$match_score,
-    row$access_level_standardized
-  )
-
-  # ----------------------------------------------------------
-  # Summary
-  # ----------------------------------------------------------
-
-  doc <- add_report_subheading(
-    doc,
-    "Summary"
-  )
-
-  summary_text <- as_text(
-    row$main_data_type_use
-  )
-
-  if (!nzchar(summary_text)) {
-    summary_text <- as_text(
-      row$suggested_use_cases
-    )
-  }
-
-  if (!nzchar(summary_text)) {
-    summary_text <- "No summary is available for this source."
-  }
-
-  doc <- officer::body_add_par(
-    doc,
-    summary_text,
-    fp_p = officer::fp_par(
-      space_after = 6
-    )
-  )
-
-  # ----------------------------------------------------------
-  # Tags
-  # ----------------------------------------------------------
-
-  doc <- add_report_subheading(
-    doc,
-    "Tags"
-  )
-
-  doc <- officer::body_add_par(
-    doc,
-    make_report_tags(row),
-    fp_p = officer::fp_par(
-      space_after = 6
-    )
-  )
-
-  # ----------------------------------------------------------
-  # Key details
-  # ----------------------------------------------------------
-
-  doc <- add_report_subheading(
-    doc,
-    "Key Details"
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Category",
-    row$category_for_filter
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Data Type",
-    row$data_type_for_filter
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Population",
-    row$population
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Geography",
-    row$geography_coverage
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Unit of Analysis",
-    row$unit_of_analysis
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Years Available",
-    row$years_available
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Access Burden",
-    row$access_burden_for_filter
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "Linkage Potential",
-    row$linkage_potential
-  )
-
-  doc <- add_report_label_value(
-    doc,
-    "South Carolina Relevance",
-    row$south_carolina_relevance
-  )
-
-  # ----------------------------------------------------------
-  # Why matched
-  # ----------------------------------------------------------
-
-  doc <- add_report_subheading(
-    doc,
-    "Why It Matched"
-  )
-
-  doc <- officer::body_add_par(
-    doc,
-    report_value(row$why_matched),
-    fp_p = officer::fp_par(
-      space_after = 6
-    )
-  )
-
-  # ----------------------------------------------------------
-  # Limitations
-  # ----------------------------------------------------------
-
-  limitations <- as_text(
-    row$limitations_cautions
-  )
-
-  if (nzchar(limitations)) {
-
-    doc <- add_report_subheading(
-      doc,
-      "Limitations"
-    )
-
-    doc <- officer::body_add_par(
-      doc,
-      limitations,
-      fp_p = officer::fp_par(
-        space_after = 6
-      )
-    )
-  }
-
-  # ----------------------------------------------------------
-  # Official source
-  # ----------------------------------------------------------
-
-  official_url <- as_text(
-    row$official_url
-  )
-
-  if (nzchar(official_url)) {
-
-    doc <- add_report_subheading(
-      doc,
-      "Official Source"
-    )
-
-    doc <- add_report_hyperlink(
-      doc,
-      "Open official source",
-      official_url
-    )
-  }
-
-  # ----------------------------------------------------------
-  # Keep source sections visually separated
-  # ----------------------------------------------------------
-
-  if (rank_number < total_sources) {
-
-    doc <- officer::body_add_par(
-      doc,
-      "",
-      fp_p = officer::fp_par(
-        space_after = 8
-      )
-    )
-  }
-
-  # Every third source starts a new page.
-  # This avoids a report with too many tiny page breaks.
-  if (
-    rank_number < total_sources &&
-    rank_number %% 3 == 0
-  ) {
-
-    doc <- officer::body_add_break(
-      doc,
-      pos = "after"
-    )
-  }
-
-  doc
-}
-
-make_access_label <- function(access) {
-
-  access_lower <- tolower(as_text(access))
-
-  if (stringr::str_detect(access_lower, "restricted")) {
-    return("Restricted")
-  }
-
-  if (stringr::str_detect(access_lower, "controlled|credentialed")) {
-    return("Controlled")
-  }
-
-  if (stringr::str_detect(access_lower, "registered")) {
-    return("Registered")
-  }
-
-  if (stringr::str_detect(access_lower, "open|public")) {
-    return("Open")
-  }
-
-  ifelse(nzchar(access), access, "Unknown")
-}
-
-make_limitations_tooltip <- function(x) {
-  x <- as_text(x)
-
-  purrr::map_chr(x, function(txt) {
-    if (!nzchar(txt)) {
-      return('<span class="limitations-empty">Not specified</span>')
-    }
-
-    # Prevent quotes or HTML in the workbook from breaking the attribute.
-    safe_txt <- htmltools::htmlEscape(txt, attribute = TRUE)
-
-    sprintf(
-      paste0(
-        '<span ',
-        'class="limitations-trigger" ',
-        'tabindex="0" ',
-        'role="button" ',
-        'data-bs-toggle="tooltip" ',
-        'data-bs-trigger="click" ',
-        'data-bs-placement="bottom" ',
-        'title="%s">',
-        'View limitations',
-        '</span>'
-      ),
-      safe_txt
-    )
-  })
-}
 
 make_html_report <- function(df, question, keywords, min_score, top_n) {
 
@@ -3239,28 +2406,6 @@ geography_filter_choices <- function(df) {
   normalized <- sort(normalized[nchar(normalized) > 0])
   unique(c(DEFAULT_GEO, normalized))
 }
-
-geography_filter_terms <- function(filters) {
-  if (length(filters) == 0) return(character())
-  terms <- purrr::map(filters, function(filter) {
-    dplyr::case_when(
-      filter == "United States" ~ "united states; us; u.s.; national",
-      filter == "South Carolina" ~ "south carolina; sc",
-      filter == "Global/international" ~ "global; international; country",
-      filter == "State-level" ~ "state; state-level",
-      filter == "County-level" ~ "county; county-level",
-      filter == "Census tract" ~ "census tract; tract",
-      filter == "Census block group" ~ "census block group; block group",
-      filter == "ZIP/ZCTA" ~ "zip; zip code; zcta",
-      filter == "City" ~ "city",
-      filter == "Hospital/provider" ~ "hospital; health system; facility; provider",
-      TRUE ~ filter
-    )
-  }) |>
-    unlist() |>
-    split_terms()
-  unique(terms)
-}
 ```
 
 
@@ -3601,23 +2746,6 @@ fluidPage(
   outline-offset: 2px;
 }
 
-/* -------------------------------------------------
-   Space between tab navigation and tab content
-   ------------------------------------------------- */
-
-.rdcd-app .tab-content {
-  padding-top: 0 !important;
-}
-
-.rdcd-app .tab-content > .tab-pane {
-  padding-top: 28px !important;
-}
-
-/* Keep the first major content element from
-   immediately touching the tab area */
-.rdcd-app .tab-content > .tab-pane.active {
-  padding-top: 28px !important;
-}
       /* -------------------------------------------------
    Data Source Cards
    ------------------------------------------------- */
@@ -4953,9 +4081,9 @@ res <- score_catalog(
   access_filter = input$access_filter %||% character(),
   open_only = input$open_only
 ) |>
-          dplyr::filter(
-            match_score >= input$min_score
-          )
+  dplyr::filter(
+    match_score >= input$min_score
+  )
 
         incProgress(0.7)
 
@@ -5065,7 +4193,16 @@ output$dashboard_summary <- renderUI({
   df <- scored_results()
 
   matching_sources <- nrow(df)
-  terms_used <- length(search_terms())
+  terms <- search_terms()
+
+terms_used <- length(
+  unique(
+    c(
+      terms$original,
+      terms$expanded
+    )
+  )
+)
 
   highest_score <- if (nrow(df) > 0) max(df$match_score, na.rm = TRUE) else 0
 
@@ -7996,630 +7133,6 @@ output$download_results <- downloadHandler(
   }
 )
     
- 
-
-# output$download_results <- downloadHandler(
-# 
-#   filename = function() {
-#     paste0(
-#       "RDCD_Data_Source_Discovery_Report_",
-#       Sys.Date(),
-#       ".docx"
-#     )
-#   },
-# 
-#   contentType =
-#     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-# 
-#   content = function(file) {
-# 
-#     # ========================================================
-#     # CURRENT RESULTS
-#     # ========================================================
-# 
-#     df <- scored_results() |>
-#       dplyr::slice_head(
-#         n = min(10, input$top_n)
-#       )
-# 
-#     # ========================================================
-#     # START WORD DOCUMENT
-#     # ========================================================
-# 
-#     doc <- officer::read_docx()
-# 
-#     # ========================================================
-#     # TITLE
-#     # ========================================================
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "RDCD Public Data Discovery Navigator"
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "Data Source Discovery Results"
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         "Generated ",
-#         Sys.Date()
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       ""
-#     )
-# 
-#     # ========================================================
-#     # SEARCH CONTEXT
-#     # ========================================================
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "Search Context"
-#     )
-# 
-#     question_text <- as_text(
-#       input$question
-#     )
-# 
-#     if (!nzchar(question_text)) {
-#       question_text <- "No research question entered."
-#     }
-# 
-#     keywords_text <- paste(
-#       search_terms(),
-#       collapse = ", "
-#     )
-# 
-#     if (!nzchar(keywords_text)) {
-#       keywords_text <- "None entered."
-#     }
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         "Research question: ",
-#         question_text
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         "Keywords: ",
-#         keywords_text
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         "Minimum match score: ",
-#         input$min_score,
-#         "%"
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       ""
-#     )
-# 
-#     # ========================================================
-#     # RESULTS AT A GLANCE
-#     # ========================================================
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "Results at a Glance"
-#     )
-# 
-#     total_matches <- nrow(df)
-# 
-#     highest_score <- if (total_matches > 0) {
-# 
-#       round(
-#         max(
-#           df$match_score,
-#           na.rm = TRUE
-#         )
-#       )
-# 
-#     } else {
-#       0
-#     }
-# 
-#     average_score <- if (total_matches > 0) {
-# 
-#       round(
-#         mean(
-#           df$match_score,
-#           na.rm = TRUE
-#         )
-#       )
-# 
-#     } else {
-#       0
-#     }
-# 
-#     open_public_count <- if (total_matches > 0) {
-# 
-#       sum(
-#         df$access_burden_for_filter == "Low" |
-#           stringr::str_detect(
-#             tolower(
-#               df$access_level_standardized
-#             ),
-#             "open|public"
-#           ),
-#         na.rm = TRUE
-#       )
-# 
-#     } else {
-#       0
-#     }
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         total_matches,
-#         " matching sources"
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         average_score,
-#         "% average match"
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         highest_score,
-#         "% highest match"
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste0(
-#         open_public_count,
-#         " open/public or low-burden sources"
-#       )
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       ""
-#     )
-# 
-#     # ========================================================
-#     # TOP MATCHING SOURCES
-#     # ========================================================
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "Top Matching Sources"
-#     )
-# 
-#     if (nrow(df) == 0) {
-# 
-#       doc <- officer::body_add_par(
-#         doc,
-#         "No sources meet the current search criteria."
-#       )
-# 
-#     } else {
-# 
-#       for (i in seq_len(nrow(df))) {
-# 
-#         row <- df[i, ]
-# 
-#         # ----------------------------------------------------
-#         # Source name
-#         # ----------------------------------------------------
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             i,
-#             ". ",
-#             as_text(row$data_source)
-#           )
-#         )
-# 
-#         # ----------------------------------------------------
-#         # Match + access
-#         # ----------------------------------------------------
-# 
-#         score_text <- if (
-#           is.na(row$match_score)
-#         ) {
-# 
-#           "N/A"
-# 
-#         } else {
-# 
-#           paste0(
-#             round(row$match_score),
-#             "%"
-#           )
-#         }
-# 
-#         access_text <- report_value(
-#           row$access_level_standardized
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Match: ",
-#             score_text,
-#             "    |    Access: ",
-#             access_text
-#           )
-#         )
-# 
-#         # ----------------------------------------------------
-#         # Summary
-#         # ----------------------------------------------------
-# 
-#         summary_text <- as_text(
-#           row$main_data_type_use
-#         )
-# 
-#         if (!nzchar(summary_text)) {
-# 
-#           summary_text <- as_text(
-#             row$suggested_use_cases
-#           )
-#         }
-# 
-#         if (!nzchar(summary_text)) {
-# 
-#           summary_text =
-#             "No summary is available for this source."
-#         }
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Summary: ",
-#             summary_text
-#           )
-#         )
-# 
-#         # ----------------------------------------------------
-#         # Tags
-#         # ----------------------------------------------------
-# 
-#         tags_text <- make_report_tags(
-#           row
-#         )
-# 
-#         if (!nzchar(tags_text)) {
-#           tags_text <- "None specified"
-#         }
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Tags: ",
-#             tags_text
-#           )
-#         )
-# 
-#         # ----------------------------------------------------
-#         # Why this source matched
-#         # ----------------------------------------------------
-# 
-#         why_text <- report_value(
-#           row$why_matched
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Why it matched: ",
-#             why_text
-#           )
-#         )
-# 
-#         # ----------------------------------------------------
-#         # Key considerations
-#         # ----------------------------------------------------
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           "Key considerations"
-#         )
-# 
-#         geography_text <- report_value(
-#           row$geography_coverage
-#         )
-# 
-#         data_type_text <- report_value(
-#           row$data_type_for_filter
-#         )
-# 
-#         population_text <- report_value(
-#           row$population
-#         )
-# 
-#         years_text <- report_value(
-#           row$years_available
-#         )
-# 
-#         access_burden_text <- report_value(
-#           row$access_burden_for_filter
-#         )
-# 
-#         linkage_text <- report_value(
-#           row$linkage_potential
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Geography: ",
-#             geography_text
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Data type: ",
-#             data_type_text
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Population: ",
-#             population_text
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Years: ",
-#             years_text
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Access burden: ",
-#             access_burden_text
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Linkage potential: ",
-#             linkage_text
-#           )
-#         )
-# 
-#         # ----------------------------------------------------
-#         # Limitations
-#         # ----------------------------------------------------
-# 
-#         limitations <- as_text(
-#           row$limitations_cautions
-#         )
-# 
-#         if (nzchar(limitations)) {
-# 
-#           doc <- officer::body_add_par(
-#             doc,
-#             paste0(
-#               "Limitations: ",
-#               limitations
-#             )
-#           )
-#         }
-# 
-#         # ----------------------------------------------------
-#         # Official source
-#         # ----------------------------------------------------
-# 
-#         official_url <- as_text(
-#           row$official_url
-#         )
-# 
-#         if (nzchar(official_url)) {
-# 
-#           doc <- officer::body_add_par(
-#             doc,
-#             paste0(
-#               "Official source: ",
-#               official_url
-#             )
-#           )
-#         }
-# 
-#         # ----------------------------------------------------
-#         # Space before next source
-#         # ----------------------------------------------------
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           ""
-#         )
-#       }
-#     }
-# 
-#     # ========================================================
-#     # APPENDIX
-#     # ========================================================
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "Additional Source Details"
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "The appendix preserves additional catalog fields for users who need more technical detail."
-#     )
-# 
-#     if (nrow(df) > 0) {
-# 
-#       for (i in seq_len(nrow(df))) {
-# 
-#         row <- df[i, ]
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             i,
-#             ". ",
-#             as_text(row$data_source)
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Category: ",
-#             report_value(
-#               row$category_for_filter
-#             )
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Unit of analysis: ",
-#             report_value(
-#               row$unit_of_analysis
-#             )
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "South Carolina relevance: ",
-#             report_value(
-#               row$south_carolina_relevance
-#             )
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Common variables / measures: ",
-#             report_value(
-#               row$common_variables_measures
-#             )
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Suggested use cases: ",
-#             report_value(
-#               row$suggested_use_cases
-#             )
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Companion datasets: ",
-#             report_value(
-#               row$companion_datasets
-#             )
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           paste0(
-#             "Data governance notes: ",
-#             report_value(
-#               row$data_governance_notes
-#             )
-#           )
-#         )
-# 
-#         doc <- officer::body_add_par(
-#           doc,
-#           ""
-#         )
-#       }
-#     }
-# 
-#     # ========================================================
-#     # RDCD NOTE
-#     # ========================================================
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       "RDCD Note"
-#     )
-# 
-#     doc <- officer::body_add_par(
-#       doc,
-#       paste(
-#         "This report supports data-source triage and feasibility review.",
-#         "It does not replace IRB review, data-use agreements,",
-#         "data governance review, or source-specific access requirements."
-#       )
-#     )
-# 
-#     # ========================================================
-#     # WRITE DOCUMENT
-#     # ========================================================
-# 
-#     print(
-#       doc,
-#       target = file
-#     )
-# 
-#     # ========================================================
-#     # VERIFY DOCUMENT
-#     # ========================================================
-# 
-#     if (!file.exists(file)) {
-# 
-#       stop(
-#         "The Word report was not created."
-#       )
-#     }
-# 
-#     if (
-#       is.na(file.info(file)$size) ||
-#       file.info(file)$size <= 0
-#     ) {
-# 
-#       stop(
-#         "The Word report was created but is empty."
-#       )
-#     }
-#   }
-# )
-
 output$download_html_report <- downloadHandler(
 
   filename = function() {
