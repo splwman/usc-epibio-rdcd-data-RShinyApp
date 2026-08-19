@@ -15,6 +15,9 @@ required_pkgs <- c(
   "DT", "tibble", "officer", "ggplot2", "flextable", "htmltools", "openxlsx"
 )
 
+library(ggplot2)
+library(flextable)
+
 missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_pkgs) > 0) {
   stop(
@@ -1000,7 +1003,8 @@ original_term_coverage <- if (original_terms_total_n > 0) {
 
       exact_match_strength =
         round(original_exact_score * 100, 1),
-keyword_hits =
+
+      keyword_hits =
   keyword_hits_vec,
 
 matched_terms =
@@ -6560,7 +6564,6 @@ tags$div(
     strongest_badges
   )
 ),
-    
 
     # Caution
     tags$div(
