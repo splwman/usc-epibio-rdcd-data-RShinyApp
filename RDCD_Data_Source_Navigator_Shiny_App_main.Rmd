@@ -852,6 +852,97 @@ score_catalog <- function(
       )
     }
   )
+  
+  # ------------------------------------------------------------
+# Original-term coverage diagnostic
+# ------------------------------------------------------------
+
+matched_original_terms_text <- purrr::map_chr(
+  df$search_text_normalized,
+  function(txt) {
+
+    hits <- original_terms[
+      vapply(
+        original_terms,
+        function(term) {
+          stringr::str_detect(
+            txt,
+            stringr::fixed(
+              term,
+              ignore_case = TRUE
+            )
+          )
+        },
+        logical(1)
+      )
+    ]
+
+    paste(
+      unique(hits),
+      collapse = "; "
+    )
+  }
+)
+
+missing_original_terms_text <- purrr::map_chr(
+  df$search_text_normalized,
+  function(txt) {
+
+    misses <- original_terms[
+      !vapply(
+        original_terms,
+        function(term) {
+          stringr::str_detect(
+            txt,
+            stringr::fixed(
+              term,
+              ignore_case = TRUE
+            )
+          )
+        },
+        logical(1)
+      )
+    ]
+
+    paste(
+      unique(misses),
+      collapse = "; "
+    )
+  }
+)
+
+original_terms_matched_n <- purrr::map_int(
+  df$search_text_normalized,
+  function(txt) {
+
+    sum(
+      vapply(
+        original_terms,
+        function(term) {
+          stringr::str_detect(
+            txt,
+            stringr::fixed(
+              term,
+              ignore_case = TRUE
+            )
+          )
+        },
+        logical(1)
+      )
+    )
+  }
+)
+
+original_terms_total_n <- length(original_terms)
+
+original_term_coverage <- if (original_terms_total_n > 0) {
+  round(
+    (original_terms_matched_n / original_terms_total_n) * 100,
+    1
+  )
+} else {
+  0
+}
 
   # ------------------------------------------------------------
   # Matched-term display
@@ -909,15 +1000,29 @@ score_catalog <- function(
 
       exact_match_strength =
         round(original_exact_score * 100, 1),
+keyword_hits =
+  keyword_hits_vec,
 
-      keyword_hits =
-        keyword_hits_vec,
+matched_terms =
+  matched_terms_text,
 
-      matched_terms =
-        matched_terms_text,
+matched_original_terms =
+  matched_original_terms_text,
 
-      match_score =
-        match_score,
+missing_original_terms =
+  missing_original_terms_text,
+
+original_terms_matched_n =
+  original_terms_matched_n,
+
+original_terms_total_n =
+  original_terms_total_n,
+
+original_term_coverage =
+  original_term_coverage,
+
+match_score =
+  match_score,
 
       concept_score =
         round(original_score * 100, 1),
@@ -4940,6 +5045,75 @@ output$compare_view <- renderUI({
 
   df <- df |>
     dplyr::arrange(data_source)
+  
+  # -------------------------------------------------
+# Search coverage
+# -------------------------------------------------
+
+terms_for_display <- search_terms()$original %||% character()
+
+coverage_rows <- if (length(terms_for_display) > 0) {
+
+  purrr::map(
+    terms_for_display,
+    function(term) {
+
+      normalized_term <- normalize_search_term(term)
+
+      list(
+        label = term,
+        values = purrr::map(
+          seq_len(nrow(df)),
+          function(i) {
+
+            row <- df[i, ]
+
+            hit <- stringr::str_detect(
+              row$search_text_normalized,
+              stringr::fixed(
+                normalized_term,
+                ignore_case = TRUE
+              )
+            )
+
+            if (isTRUE(hit)) {
+              tags$span(
+                style = paste0(
+                  "display:inline-flex;",
+                  "align-items:center;",
+                  "padding:4px 9px;",
+                  "border-radius:999px;",
+                  "background:#DCFCE7;",
+                  "color:#166534;",
+                  "font-size:12px;",
+                  "font-weight:700;"
+                ),
+                "\u2713 Found"
+              )
+            } else {
+              tags$span(
+                style = paste0(
+                  "display:inline-flex;",
+                  "align-items:center;",
+                  "padding:4px 9px;",
+                  "border-radius:999px;",
+                  "background:#FEE2E2;",
+                  "color:#991B1B;",
+                  "font-size:12px;",
+                  "font-weight:700;"
+                ),
+                "\u2717 Not found"
+              )
+            }
+          }
+        )
+      )
+    }
+  )
+
+} else {
+  list()
+}
 
   # -------------------------------------------------
   # Shared grid definition
@@ -4965,6 +5139,49 @@ output$compare_view <- renderUI({
     label_width + (nrow(df) * source_width),
     "px;"
   )
+  
+  search_coverage_rows <- purrr::map(
+  coverage_rows,
+  function(item) {
+
+    tags$div(
+      style = paste0(
+        comparison_grid,
+        "border-top:1px solid #EEF2F7;"
+      ),
+
+      tags$div(
+        style = paste0(
+          "padding:12px 14px;",
+          "background:#F9FAFB;",
+          "border-right:1px solid #EEF2F7;",
+          "font-size:11px;",
+          "font-weight:800;",
+          "text-transform:uppercase;",
+          "letter-spacing:0.04em;",
+          "color:#6B7280;"
+        ),
+        item$label
+      ),
+
+      purrr::map(
+        item$values,
+        function(value) {
+
+          tags$div(
+            style = paste0(
+              "padding:12px 14px;",
+              "background:#FFFFFF;",
+              "border-right:1px solid #EEF2F7;",
+              "min-width:0;"
+            ),
+            value
+          )
+        }
+      )
+    )
+  }
+)
 
   # -------------------------------------------------
   # Helper: normalize displayed values
@@ -5547,6 +5764,77 @@ output$compare_view <- renderUI({
 
       quick_view_cells
     ),
+    
+    # Search coverage
+tags$div(
+  style = paste0(
+    comparison_grid,
+    "border-top:1px solid #EEF2F7;"
+  ),
+
+  tags$div(
+    style = paste0(
+      "padding:12px 14px;",
+      "background:#F8F1F2;",
+      "border-right:1px solid #E5D3D5;",
+      "font-size:11px;",
+      "font-weight:800;",
+      "text-transform:uppercase;",
+      "letter-spacing:0.04em;",
+      "color:#73000A;"
+    ),
+    "Search Coverage"
+  ),
+
+  purrr::map(
+    seq_len(nrow(df)),
+    function(i) {
+
+      row <- df[i, ]
+
+      matched_n <- as.numeric(row$original_terms_matched_n)
+      total_n <- as.numeric(row$original_terms_total_n)
+
+      tags$div(
+        style = paste0(
+          "padding:12px 14px;",
+          "background:#F8F1F2;",
+          "border-right:1px solid #E5D3D5;",
+          "min-width:0;"
+        ),
+
+        tags$div(
+          style = paste0(
+            "font-size:12px;",
+            "font-weight:800;",
+            "color:#73000A;",
+            "margin-bottom:6px;"
+          ),
+          paste0(
+            matched_n,
+            " of ",
+            total_n,
+            " concepts matched"
+          )
+        ),
+
+        tags$div(
+          style = paste0(
+            "font-size:11px;",
+            "color:#6B7280;",
+            "line-height:1.4;"
+          ),
+          paste0(
+            round(as.numeric(row$original_term_coverage)),
+            "% search coverage"
+          )
+        )
+      )
+    }
+  )
+),
+
+search_coverage_rows,
 
     # Main rows
     matrix_rows,
@@ -5867,6 +6155,58 @@ data_fit_summary <- reactive({
       "and linkage signals."
     )
   }
+  
+  # -------------------------------------------------
+# Search coverage
+# -------------------------------------------------
+
+matched_top_terms <- as_text(top$matched_original_terms)
+missing_top_terms <- as_text(top$missing_original_terms)
+
+coverage_text <- if (
+  nzchar(missing_top_terms) &&
+  nzchar(matched_top_terms)
+) {
+
+  paste0(
+    "The leading source matches ",
+    top$original_terms_matched_n,
+    " of ",
+    top$original_terms_total_n,
+    " original search concepts (",
+    round(top$original_term_coverage),
+    "% coverage). ",
+    "Matched: ",
+    matched_top_terms,
+    ". ",
+    "Not found: ",
+    missing_top_terms,
+    "."
+  )
+
+} else if (nzchar(missing_top_terms)) {
+
+  paste0(
+    "The leading source matches ",
+    top$original_terms_matched_n,
+    " of ",
+    top$original_terms_total_n,
+    " original search concepts (",
+    round(top$original_term_coverage),
+    "% coverage). ",
+    "Not found: ",
+    missing_top_terms,
+    "."
+  )
+
+} else {
+
+  paste0(
+    "The leading source matches all ",
+    top$original_terms_total_n,
+    " original search concepts."
+  )
+}
 
   # Add the strongest source's specific matching rationale
   top_why <- as_text(top$why_matched)
@@ -6019,6 +6359,7 @@ data_fit_summary <- reactive({
   list(
     top_source = as_text(top$data_source),
     top_score = round(top$match_score),
+    coverage = coverage_text,
     why = why_text,
     tradeoffs = tradeoff_text,
     strongest = strongest_text,
@@ -6187,33 +6528,39 @@ output$fit_summary <- renderUI({
       )
     ),
 
-    # Narrative sections
-    tags$div(
+# Narrative sections
+tags$div(
+  style = paste0(
+    "display:flex;",
+    "flex-direction:column;",
+    "gap:14px;"
+  ),
 
-      style = paste0(
-        "display:flex;",
-        "flex-direction:column;",
-        "gap:14px;"
-      ),
+  narrative_section(
+    "1",
+    "Search Coverage",
+    summary$coverage
+  ),
 
-      narrative_section(
-        "1",
-        "Why these sources matched",
-        summary$why
-      ),
+  narrative_section(
+    "2",
+    "Why these sources matched",
+    summary$why
+  ),
 
-      narrative_section(
-        "2",
-        "Tradeoffs to consider",
-        summary$tradeoffs
-      ),
+  narrative_section(
+    "3",
+    "Tradeoffs to consider",
+    summary$tradeoffs
+  ),
 
-      narrative_section(
-        "3",
-        "Strongest sources",
-        strongest_badges
-      )
-    ),
+  narrative_section(
+    "4",
+    "Strongest sources",
+    strongest_badges
+  )
+),
+    
 
     # Caution
     tags$div(
