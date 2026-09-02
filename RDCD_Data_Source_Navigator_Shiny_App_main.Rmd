@@ -1067,25 +1067,31 @@ make_html_link <- function(label, url) {
   )
 }
 
-make_score_badge <- function(score) {
+make_relevance_badge <- function(score) {
   purrr::map_chr(score, function(x) {
     if (is.na(x)) {
-      return(
-        '<span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap;background:#F3F4F6;color:#4B5563;">N/A</span>'
-      )
-    }
-
-    if (x >= 70) {
-      bg <- "#DCFCE7"; fg <- "#166534"
+      label <- "Not rated"
+      bg <- "#F3F4F6"
+      fg <- "#4B5563"
+    } else if (x >= 70) {
+      label <- "Strong match"
+      bg <- "#DCFCE7"
+      fg <- "#166534"
     } else if (x >= 40) {
-      bg <- "#FEF3C7"; fg <- "#92400E"
+      label <- "Related match"
+      bg <- "#FEF3C7"
+      fg <- "#92400E"
     } else {
-      bg <- "#FEE2E2"; fg <- "#991B1B"
+      label <- "Possible match"
+      bg <- "#F3F4F6"
+      fg <- "#4B5563"
     }
 
     sprintf(
-      '<span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap;background:%s;color:%s;">%s%%</span>',
-      bg, fg, round(x)
+      '<span style="display:inline-flex;align-items:center;justify-content:center;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap;background:%s;color:%s;">%s</span>',
+      bg,
+      fg,
+      htmltools::htmlEscape(label)
     )
   })
 }
@@ -3733,14 +3739,16 @@ tags$div(
             FALSE
           ),
 
-          sliderInput(
-            "min_score",
-            "Minimum Match Score",
-            min = 0,
-            max = 100,
-            value = 15,
-            step = 5
-          ),
+          selectInput(
+  "min_score",
+  "Show results with at least",
+  choices = c(
+    "Possible match" = "15",
+    "Related match" = "40",
+    "Strong match" = "70"
+  ),
+  selected = "15"
+),
 
           numericInput(
             "top_n",
@@ -4191,8 +4199,8 @@ res <- score_catalog(
   open_only = input$open_only
 ) |>
   dplyr::filter(
-    match_score >= input$min_score
-  )
+  match_score >= as.numeric(input$min_score)
+)
 
         incProgress(0.7)
 
@@ -4369,17 +4377,14 @@ terms_used <- length(
 
     div(style = "width:1px; height:24px; background:#D8C7C9; margin:0 18px; flex-shrink:0;"),
 
-    div(
-      style = "display:flex; align-items:baseline; gap:7px; flex:1; white-space:nowrap;",
-      span(
-        style = "font-size:18px; font-weight:800; line-height:1; color:#73000A;",
-        paste0(highest_score, "%")
-      ),
-      span(
-        style = "font-size:13px; font-weight:500; color:#4B5563;",
-        "Highest Match Score"
-      )
-    ),
+  div(
+  style = "display:flex; align-items:center; gap:7px; flex:1; white-space:nowrap;",
+  HTML(make_relevance_badge(highest_score)),
+  span(
+    style = "font-size:13px; font-weight:500; color:#4B5563;",
+    "Highest search relevance"
+  )
+),
 
     div(style = "width:1px; height:24px; background:#D8C7C9; margin:0 18px; flex-shrink:0;"),
 
@@ -4474,7 +4479,7 @@ output$result_summary <- renderUI({
       ),
       span(
         style = "font-size:13px; font-weight:500; color:#6B7280;",
-        "Match score ↓"
+        "Search relevance ↓"
       )
     )
   )
@@ -4559,7 +4564,7 @@ output$results_context <- renderUI({
       ),
       span(
         style = "font-size:13px; font-weight:500; color:#6B7280;",
-        "Match score ↓"
+        "Search relevance ↓"
       )
     )
   )
@@ -4596,8 +4601,16 @@ output$results_table_container <- renderUI({
     )
   }
 
-  tagList(
+ tagList(
   uiOutput("results_context"),
+
+  tags$p(
+    class = "small-note",
+    style = "margin:0 0 8px;",
+    tags$strong("Search relevance: "),
+    "Based on how closely a source's catalog information aligns with your search terms. It is a search aid, not a data-quality rating."
+  ),
+
   DT::DTOutput("results_table")
 )
 })
@@ -4607,13 +4620,13 @@ output$results_table <- DT::renderDT({
   df <- scored_results() |>
     dplyr::slice_head(n = input$top_n) |>
  dplyr::mutate(
-  score_badge = make_score_badge(match_score),
+  relevance_badge = make_relevance_badge(match_score),
   access_badge = make_access_badge(access_level_standardized),
   link = make_html_link(official_link_text, official_url)
 ) |>
 dplyr::select(
   `Data Source` = data_source,
-  `Match Score` = score_badge,
+  `Search Relevance` = relevance_badge,
   `Access` = access_badge,
   `Official Link` = link
 )
