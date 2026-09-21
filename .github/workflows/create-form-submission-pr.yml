@@ -1,0 +1,106 @@
+name: Create review pull request from form submission
+
+on:
+  workflow_dispatch:
+    inputs:
+      record_id:
+        description: "Permanent record ID, for example DS-107"
+        required: true
+        type: string
+      data_source:
+        description: "Data source name"
+        required: true
+        type: string
+      official_link:
+        description: "Official link"
+        required: false
+        type: string
+      narrative:
+        description: "Description of the data source"
+        required: false
+        type: string
+      access_level:
+        description: "Access level"
+        required: false
+        type: string
+      primary_category:
+        description: "Primary category"
+        required: false
+        type: string
+      secondary_categories:
+        description: "Secondary categories"
+        required: false
+        type: string
+      data_type:
+        description: "Data type"
+        required: false
+        type: string
+      geography:
+        description: "Geography"
+        required: false
+        type: string
+      population:
+        description: "Population"
+        required: false
+        type: string
+      unit_of_analysis:
+        description: "Unit of analysis"
+        required: false
+        type: string
+      keywords:
+        description: "Keywords"
+        required: false
+        type: string
+      linkage_potential:
+        description: "Linkage potential"
+        required: false
+        type: string
+      access_burden:
+        description: "Access burden"
+        required: false
+        type: string
+      rdcd_notes:
+        description: "RDCD notes"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-review-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the current public data
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install workbook dependency
+        run: python -m pip install --disable-pip-version-check openpyxl
+
+      - name: Add the submitted record to a review branch
+        env:
+          SUBMISSION_JSON: ${{ toJSON(inputs) }}
+        run: |
+          python scripts/add_form_submission.py
+
+          branch="form-submission-${{ inputs.record_id }}-${{ github.run_id }}"
+          git checkout -b "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add RDCD_Data_Source_Preparation_Template.xlsx
+          git commit -m "Stage ${{ inputs.record_id }} for review"
+          git push origin "$branch"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Review ${{ inputs.record_id }} data-source submission" \
+            --body-file /tmp/form_submission_review.md
+        env:
+          GH_TOKEN: ${{ github.token }}
