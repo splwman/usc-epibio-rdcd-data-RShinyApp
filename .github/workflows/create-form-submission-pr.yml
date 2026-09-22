@@ -12,7 +12,7 @@ jobs:
   create-review-pr:
     runs-on: ubuntu-latest
     env:
-      SUBMISSION_JSON: ${{ toJSON(github.event.client_payload) }}
+      SUBMISSION_JSON: ${{ toJSON(github.event.client_payload.submission) }}
       RECORD_ID: ${{ github.event.client_payload.record_id }}
       GH_TOKEN: ${{ github.token }}
 
