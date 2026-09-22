@@ -46,6 +46,28 @@ FIELD_MAP = {
     "topic_areas": ("topic_area_s",),
 }
 REQUIRED_WORKBOOK_COLUMNS = ("record_id", "data_source")
+APP_SEARCH_COLUMNS = (
+    "data_source",
+    "official_link_text",
+    "main_data_type_use",
+    "raw_access_level",
+    "access_level_standardized",
+    "primary_category",
+    "secondary_categories_tags",
+    "keywords_for_search",
+    "data_type_standardized",
+    "topic_area_s",
+    "population",
+    "geography_coverage",
+    "geographic_unit",
+    "unit_of_analysis",
+    "south_carolina_relevance",
+    "common_variables_measures",
+    "suggested_use_cases",
+    "companion_datasets",
+    "limitations_cautions",
+    "data_governance_notes",
+)
 
 
 def normalize_header(value: object) -> str:
@@ -144,6 +166,7 @@ def main() -> None:
             for catalog_column in catalog_columns
             if catalog_column in headers
         }
+        | ({headers["app_search_text"]} if "app_search_text" in headers else set())
     )
     copy_row_style(worksheet, target_row - 1, target_row, mapped_columns)
 
@@ -152,6 +175,16 @@ def main() -> None:
         for catalog_column in catalog_columns:
             if catalog_column in headers:
                 worksheet.cell(target_row, headers[catalog_column]).value = value
+
+    if "app_search_text" in headers:
+        app_search_text = " ".join(
+            safe_text(worksheet.cell(target_row, headers[column]).value)
+            for column in APP_SEARCH_COLUMNS
+            if column in headers
+        ).lower()
+        worksheet.cell(
+            target_row, headers["app_search_text"]
+        ).value = safe_text(app_search_text)
 
     expand_table(table, target_row)
     workbook.save(WORKBOOK_PATH)
