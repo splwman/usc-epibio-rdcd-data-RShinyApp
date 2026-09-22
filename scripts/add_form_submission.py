@@ -74,14 +74,19 @@ def copy_row_style(worksheet, source_row: int, target_row: int, columns: list[in
             target.alignment = copy(source.alignment)
 
 
-def expand_matching_table(worksheet, header_row: int, target_row: int) -> None:
+def find_matching_table(worksheet, header_row: int):
     for table in worksheet.tables.values():
-        start_cell, end_cell = table.ref.split(":")
-        start_row = worksheet[start_cell].row
-        end_column = worksheet[end_cell].column_letter
+        start_cell, _ = table.ref.split(":")
+        if worksheet[start_cell].row == header_row:
+            return table
 
-        if start_row == header_row:
-            table.ref = f"{start_cell}:{end_column}{target_row}"
+    raise ValueError("Could not find an Excel Table starting on the header row.")
+
+
+def expand_table(table, target_row: int) -> None:
+    start_cell, end_cell = table.ref.split(":")
+    end_column = re.sub(r"\d+$", "", end_cell)
+    table.ref = f"{start_cell}:{end_column}{target_row}"
 
 
 def main() -> None:
@@ -116,7 +121,9 @@ def main() -> None:
     if record_id in existing_ids:
         raise ValueError(f"record_id already exists in the workbook: {record_id}")
 
-    target_row = worksheet.max_row + 1
+    table = find_matching_table(worksheet, header_row)
+    _, table_end_cell = table.ref.split(":")
+    target_row = worksheet[table_end_cell].row + 1
     mapped_columns = sorted(
         {
             headers[catalog_column]
@@ -133,7 +140,7 @@ def main() -> None:
             if catalog_column in headers:
                 worksheet.cell(target_row, headers[catalog_column]).value = value
 
-    expand_matching_table(worksheet, header_row, target_row)
+    expand_table(table, target_row)
     workbook.save(WORKBOOK_PATH)
 
     summary_lines = [
