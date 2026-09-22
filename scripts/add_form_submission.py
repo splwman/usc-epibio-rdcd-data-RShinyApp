@@ -31,6 +31,19 @@ FIELD_MAP = {
     "linkage_potential": ("linkage_potential",),
     "access_burden": ("access_burden",),
     "rdcd_notes": ("rdcd_consultation_notes",),
+    "geographic_unit": ("geographic_unit",),
+    "individual_level_data": ("individual_level_data",),
+    "area_level_data": ("area_level_data",),
+    "longitudinal": ("longitudinal",),
+    "years_available": ("years_available",),
+    "refresh_frequency": ("refresh_frequency",),
+    "south_carolina_relevance": ("south_carolina_relevance",),
+    "common_variables_measures": ("common_variables_measures",),
+    "suggested_use_cases": ("suggested_use_cases",),
+    "companion_datasets": ("companion_datasets",),
+    "limitations_cautions": ("limitations_cautions",),
+    "data_governance_notes": ("data_governance_notes",),
+    "topic_areas": ("topic_area_s",),
 }
 REQUIRED_WORKBOOK_COLUMNS = ("record_id", "data_source")
 
