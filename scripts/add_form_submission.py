@@ -12,23 +12,27 @@ from openpyxl import load_workbook
 WORKBOOK_PATH = Path("RDCD_Data_Source_Preparation_Template.xlsx")
 SHEET_NAME = "Data_Prep"
 
-EXPECTED_COLUMNS = [
-    "record_id",
-    "data_source",
-    "official_link",
-    "narrative",
-    "access_level",
-    "primary_category",
-    "secondary_categories",
-    "data_type",
-    "geography",
-    "population",
-    "unit_of_analysis",
-    "keywords",
-    "linkage_potential",
-    "access_burden",
-    "rdcd_notes",
-]
+# Maps the Form/Power Automate field names to the actual public catalog columns.
+# One Form value may populate more than one catalog column when that improves
+# the app's display and filtering.
+FIELD_MAP = {
+    "record_id": ("record_id",),
+    "data_source": ("data_source", "official_link_text"),
+    "official_link": ("official_url",),
+    "narrative": ("main_data_type_use",),
+    "access_level": ("raw_access_level", "access_level_standardized"),
+    "primary_category": ("primary_category",),
+    "secondary_categories": ("secondary_categories_tags",),
+    "data_type": ("data_type_standardized",),
+    "geography": ("geography_coverage",),
+    "population": ("population",),
+    "unit_of_analysis": ("unit_of_analysis",),
+    "keywords": ("keywords_for_search",),
+    "linkage_potential": ("linkage_potential",),
+    "access_burden": ("access_burden",),
+    "rdcd_notes": ("rdcd_consultation_notes",),
+}
+REQUIRED_WORKBOOK_COLUMNS = ("record_id", "data_source")
 
 
 def normalize_header(value: object) -> str:
@@ -97,7 +101,9 @@ def main() -> None:
     worksheet = workbook[SHEET_NAME]
     header_row, headers = find_header_row(worksheet)
 
-    missing_columns = [column for column in EXPECTED_COLUMNS if column not in headers]
+    missing_columns = [
+        column for column in REQUIRED_WORKBOOK_COLUMNS if column not in headers
+    ]
     if missing_columns:
         raise ValueError(
             "Workbook is missing required columns: " + ", ".join(missing_columns)
@@ -111,15 +117,21 @@ def main() -> None:
         raise ValueError(f"record_id already exists in the workbook: {record_id}")
 
     target_row = worksheet.max_row + 1
-    copy_row_style(
-        worksheet,
-        target_row - 1,
-        target_row,
-        [headers[column] for column in EXPECTED_COLUMNS],
+    mapped_columns = sorted(
+        {
+            headers[catalog_column]
+            for catalog_columns in FIELD_MAP.values()
+            for catalog_column in catalog_columns
+            if catalog_column in headers
+        }
     )
+    copy_row_style(worksheet, target_row - 1, target_row, mapped_columns)
 
-    for column in EXPECTED_COLUMNS:
-        worksheet.cell(target_row, headers[column]).value = safe_text(payload.get(column))
+    for form_field, catalog_columns in FIELD_MAP.items():
+        value = safe_text(payload.get(form_field))
+        for catalog_column in catalog_columns:
+            if catalog_column in headers:
+                worksheet.cell(target_row, headers[catalog_column]).value = value
 
     expand_matching_table(worksheet, header_row, target_row)
     workbook.save(WORKBOOK_PATH)
@@ -130,11 +142,11 @@ def main() -> None:
         "Please verify the proposed source information before merging.",
         "",
     ]
-    for column in EXPECTED_COLUMNS:
-        if column == "record_id":
+    for form_field in FIELD_MAP:
+        if form_field == "record_id":
             continue
-        label = column.replace("_", " ").title()
-        summary_lines.append(f"**{label}:** {safe_text(payload.get(column)) or '—'}")
+        label = form_field.replace("_", " ").title()
+        summary_lines.append(f"**{label}:** {safe_text(payload.get(form_field)) or '—'}")
         summary_lines.append("")
 
     Path("/tmp/form_submission_review.md").write_text(
