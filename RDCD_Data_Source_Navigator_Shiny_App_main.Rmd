@@ -4051,6 +4051,17 @@ tabPanel(
 
 
 ```{r server, context="server", echo=FALSE}
+
+observeEvent(input$run_search, {
+  message(
+    paste(
+      "RDCD_RUN_SEARCH",
+      format(Sys.time(), tz = "America/New_York", usetz = TRUE),
+      sep = " | "
+    )
+  )
+}, ignoreInit = TRUE)
+
 current_path <- reactive({
   if (!is.null(input$catalog_file)) {
     input$catalog_file$datapath
