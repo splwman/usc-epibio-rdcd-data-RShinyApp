@@ -29,16 +29,17 @@ jobs:
           CONNECT_CLOUD_CLIENT_ID: ${{ secrets.CONNECT_CLOUD_CLIENT_ID }}
           CONNECT_CLOUD_CLIENT_SECRET: ${{ secrets.CONNECT_CLOUD_CLIENT_SECRET }}
         run: |
-          Rscript -e '
-            rsconnect::connectCloudClientCredentials(
-              clientId = Sys.getenv("CONNECT_CLOUD_CLIENT_ID"),
-              clientSecret = Sys.getenv("CONNECT_CLOUD_CLIENT_SECRET"),
-              account = "splwman"
-            )
+          Rscript - <<'EOF'
+          rsconnect::connectCloudClientCredentials(
+            clientId = Sys.getenv("CONNECT_CLOUD_CLIENT_ID"),
+            clientSecret = Sys.getenv("CONNECT_CLOUD_CLIENT_SECRET"),
+            account = "splwman"
+          )
 
-            rsconnect::deployDoc(
-              doc = "RDCD_Data_Source_Navigator_Shiny_App_main.Rmd",
-              appId = "01a0e8aa-1f0a-74ef-6426-99ba8508d9a8",
-              launch.browser = FALSE
-            )
-          '
+          rsconnect::deployApp(
+            appDir = ".",
+            manifestPath = "manifest.json",
+            appId = "01a0e8aa-1f0a-74ef-6426-99ba8508d9a8",
+            launch.browser = FALSE
+          )
+          EOF
