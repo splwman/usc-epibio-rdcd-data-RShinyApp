@@ -37,7 +37,7 @@ jobs:
             )
 
             rsconnect::deployDoc(
-              docPath = "RDCD_Data_Source_Navigator_Shiny_App_main.Rmd",
+              doc = "RDCD_Data_Source_Navigator_Shiny_App_main.Rmd",
               appId = "01a0e8aa-1f0a-74ef-6426-99ba8508d9a8",
               launch.browser = FALSE
             )
