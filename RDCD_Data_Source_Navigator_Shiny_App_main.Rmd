@@ -12,7 +12,8 @@ runtime: shiny
 ```{r setup, include=FALSE}
 required_pkgs <- c(
   "shiny", "bslib", "readxl", "dplyr", "tidyr", "stringr", "purrr",
-  "DT", "tibble", "officer", "ggplot2", "flextable", "htmltools", "openxlsx"
+  "DT", "tibble", "officer", "ggplot2", "flextable", "htmltools",
+  "openxlsx", "httr2"
 )
 
 library(ggplot2)
@@ -4052,7 +4053,52 @@ tabPanel(
 
 ```{r server, context="server", echo=FALSE}
 
+record_search_event <- function() {
+  github_token <- Sys.getenv("RDCD_USAGE_TRACKER_TOKEN", unset = "")
+
+  if (!nzchar(github_token)) {
+    message("RDCD usage tracking skipped: token is not configured.")
+    return(invisible(FALSE))
+  }
+
+  event_time <- format(Sys.time(), tz = "UTC", usetz = TRUE)
+
+  tryCatch(
+    {
+      httr2::request(
+        "https://api.github.com/repos/splwman/rdcd-app-usage-tracker/dispatches"
+      ) |>
+        httr2::req_headers(
+          Accept = "application/vnd.github+json",
+          Authorization = paste("Bearer", github_token),
+          `X-GitHub-Api-Version` = "2022-11-28",
+          `User-Agent` = "RDCD-Shiny-App"
+        ) |>
+        httr2::req_timeout(5) |>
+        httr2::req_body_json(
+          list(
+            event_type = "record_search",
+            client_payload = list(event_time = event_time)
+          )
+        ) |>
+        httr2::req_perform()
+
+      message("RDCD usage event sent.")
+      invisible(TRUE)
+    },
+    error = function(error) {
+      message(
+        "RDCD usage tracking failed, but search will continue: ",
+        conditionMessage(error)
+      )
+      invisible(FALSE)
+    }
+  )
+}
+
 observeEvent(input$run_search, {
+  record_search_event()
+
   message(
     paste(
       "RDCD_RUN_SEARCH",
