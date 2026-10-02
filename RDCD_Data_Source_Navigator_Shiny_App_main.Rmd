@@ -3907,6 +3907,7 @@ div(
 
 tabsetPanel(
   type = "pills",
+  
 
 tabPanel(
   "Top Matches",
@@ -4040,6 +4041,25 @@ tabPanel(
       )
     )
   )
+),
+
+  tabPanel(
+  "Source Index",
+
+  div(
+    class = "rdcd-start-state",
+
+    h3("Browse the Source Index"),
+
+    p(
+      "Use this index to check whether a source is already listed. ",
+      "For update or removal requests, copy the exact Source ID and Data Source name shown below."
+    ),
+
+    uiOutput("source_index_summary")
+  ),
+
+  DT::DTOutput("source_index_table")
 )
 )
   )
@@ -4217,6 +4237,51 @@ list(
   },
   ignoreNULL = FALSE
 )
+
+output$source_index_summary <- renderUI({
+
+  n_sources <- nrow(processed_catalog())
+
+  tags$p(
+    style = "margin:14px 0 0; color:#6B7280; font-size:14px;",
+    paste0(n_sources, " source", if (n_sources == 1) "" else "s", " currently listed.")
+  )
+})
+
+
+output$source_index_table <- DT::renderDT({
+
+  index_df <- processed_catalog() |>
+    dplyr::mutate(
+      official_link = make_html_link(official_link_text, official_url)
+    ) |>
+    dplyr::transmute(
+  `Source ID` = record_id,
+  `Data Source` = data_source,
+  `Official Link` = official_link
+) |>
+    dplyr::arrange(
+      tolower(`Data Source`),
+      `Data Source`
+    )
+
+  DT::datatable(
+    index_df,
+    escape = FALSE,
+    rownames = FALSE,
+    filter = "top",
+    class = "stripe hover compact",
+    options = list(
+      pageLength = 25,
+      lengthMenu = c(10, 25, 50, 100),
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      ordering = TRUE,
+      order = list(),
+      dom = "ftip"
+    )
+  )
+})
 
 
 scored_results <- eventReactive(
