@@ -3932,6 +3932,7 @@ if (FALSE) {
     width = 8,
 
 tabsetPanel(
+  id = "main_tabs",
   type = "pills",
   
 
@@ -4071,6 +4072,7 @@ tabPanel(
 
   tabPanel(
   "Source Index",
+  value = "source-index",
 
   div(
     class = "rdcd-start-state",
@@ -4157,6 +4159,16 @@ observeEvent(input$run_search, {
     )
   )
 }, ignoreInit = TRUE)
+
+observe({
+  if (identical(session$clientData$url_hash_initial, "#source-index")) {
+    updateTabsetPanel(
+      session,
+      "main_tabs",
+      selected = "source-index"
+    )
+  }
+})
 
 current_path <- reactive({
   if (!is.null(input$catalog_file)) {
