@@ -3554,6 +3554,8 @@ fluidPage(
 
 /* Responsive */
 }
+
+
     ")),
 
 tags$script(HTML("
@@ -3576,6 +3578,7 @@ tags$script(HTML("
     }
 
   });
+
 
 "))
   ),
@@ -4811,10 +4814,54 @@ dplyr::select(
   )
 })
 
+selected_card_tag <- reactiveVal(NULL)
+
+observeEvent(input$selected_card_tag, {
+  selected_card_tag(as_text(input$selected_card_tag$tag))
+})
+
+card_tags <- function(row) {
+  raw_tags <- c(
+    split_terms(row$primary_category),
+    split_terms(row$secondary_categories_tags),
+    split_terms(row$data_type_for_filter),
+    split_terms(row$geography_coverage)
+  )
+
+  unique(raw_tags[nchar(raw_tags) > 0])
+}
+
+source_cards_data <- reactive({
+  selected_tag <- selected_card_tag()
+
+  # Normal search result cards when no tag has been selected
+  if (is.null(selected_tag) || !nzchar(selected_tag)) {
+    return(scored_results())
+  }
+
+  # All catalog sources carrying the selected tag
+  df <- processed_catalog()
+
+  matching_rows <- vapply(
+    seq_len(nrow(df)),
+    function(i) {
+      tolower(selected_tag) %in% tolower(card_tags(df[i, , drop = FALSE]))
+    },
+    logical(1)
+  )
+
+  df <- df[matching_rows, , drop = FALSE]
+  df$match_score <- NA_real_  # relevance is not applicable in tag-browse mode
+
+  df
+})
+
 output$source_cards <- renderUI({
 
-  df <- scored_results() |>
-    dplyr::slice_head(n = min(10, input$top_n))
+  df <- source_cards_data() |>
+  dplyr::slice_head(n = min(10, input$top_n))
+
+  selected_tag <- selected_card_tag()
 
   if (nrow(df) == 0) {
     return(
@@ -4871,20 +4918,32 @@ output$source_cards <- renderUI({
       purrr::map(
         tags_vec,
         function(tag) {
-          tags$span(
-            style = paste(
-              "display:inline-block;",
-              "padding:5px 9px;",
-              "margin:0 5px 5px 0;",
-              "border-radius:999px;",
-              "background:#F8F1F2;",
-              "border:1px solid #E5D3D5;",
-              "color:#73000A;",
-              "font-size:11px;",
-              "font-weight:700;"
-            ),
-            tag
-          )
+          tags$button(
+  type = "button",
+  class = "rdcd-card-tag",
+  onmouseover = "this.style.background='#73000A'; this.style.borderColor='#73000A'; this.style.color='#FFFFFF';",
+onmouseout = "this.style.background='#F8F1F2'; this.style.borderColor='#E5D3D5'; this.style.color='#73000A';",
+  onclick = paste0(
+    "Shiny.setInputValue(
+      'selected_card_tag',
+      {tag: this.textContent, nonce: Date.now()},
+      {priority: 'event'}
+    );"
+  ),
+  style = paste(
+    "display:inline-block;",
+    "padding:5px 9px;",
+    "margin:0 5px 5px 0;",
+    "border-radius:999px;",
+    "background:#F8F1F2;",
+    "border:1px solid #E5D3D5;",
+    "color:#73000A;",
+    "font-size:11px;",
+    "font-weight:700;",
+    "cursor:pointer;"
+  ),
+  tag
+)
         }
       )
 
@@ -5131,6 +5190,42 @@ output$source_cards <- renderUI({
   # -----------------------------
   # 2-column card grid
   # -----------------------------
+  tagList(
+  if (!is.null(selected_tag) && nzchar(selected_tag)) {
+    tags$div(
+      style = paste(
+        "margin-top:18px;",
+        "padding:12px 14px;",
+        "background:#F8F1F2;",
+        "border:1px solid #E5D3D5;",
+        "border-radius:10px;",
+        "color:#4B5563;",
+        "font-size:13px;"
+      ),
+      paste0("Showing sources tagged “", selected_tag, "”. "),
+      tags$button(
+  id = "clear_card_tag",
+  type = "button",
+  onclick = paste0(
+    "Shiny.setInputValue(
+      'selected_card_tag',
+      {tag: '', nonce: Date.now()},
+      {priority: 'event'}
+    );"
+  ),
+  style = paste(
+    "border:0;",
+    "background:transparent;",
+    "color:#73000A;",
+    "font-weight:700;",
+    "text-decoration:underline;",
+    "cursor:pointer;"
+  ),
+  "Clear tag filter"
+)
+    )
+  },
+
   tags$div(
     style = paste(
       "display:grid;",
@@ -5140,6 +5235,7 @@ output$source_cards <- renderUI({
     ),
     cards
   )
+)
 })
 
 output$compare_picker <- renderUI({
