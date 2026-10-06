@@ -651,6 +651,28 @@ score_terms_against_catalog <- function(df, terms) {
   rowMeans(matrix_scores)
 }
 
+empty_scored_results <- function(df) {
+  # Keep the expected result columns even when a search/filter combination
+  # has no candidate rows.
+  df <- df[0, , drop = FALSE]
+
+  df$original_match_score <- numeric()
+  df$expanded_match_score <- numeric()
+  df$exact_match_strength <- numeric()
+  df$keyword_hits <- integer()
+  df$matched_terms <- character()
+  df$matched_original_terms <- character()
+  df$missing_original_terms <- character()
+  df$original_terms_matched_n <- integer()
+  df$original_terms_total_n <- integer()
+  df$original_term_coverage <- numeric()
+  df$match_score <- numeric()
+  df$concept_score <- numeric()
+  df$concept_hit <- logical()
+  df$why_matched <- character()
+
+  df
+}
 
 score_catalog <- function(
   df,
@@ -663,9 +685,9 @@ score_catalog <- function(
   open_only
 ) {
 
-  if (nrow(df) == 0) {
-    return(df)
-  }
+ if (nrow(df) == 0) {
+  return(empty_scored_results(df))
+}
 
   # ------------------------------------------------------------
   # Normalize and clean terms once
@@ -766,8 +788,8 @@ score_catalog <- function(
   }
 
   if (nrow(df) == 0) {
-    return(df)
-  }
+  return(empty_scored_results(df))
+}
 
   # ------------------------------------------------------------
   # Candidate filtering BEFORE expensive scoring
@@ -788,8 +810,8 @@ score_catalog <- function(
   }
 
   if (nrow(df) == 0) {
-    return(df)
-  }
+  return(empty_scored_results(df))
+}
 
   # ------------------------------------------------------------
   # Score original terms
@@ -3640,10 +3662,11 @@ uiOutput("dashboard_summary"),
 
 uiOutput("question_char_count"),
 
-textInput(
+textAreaInput(
   "keyword_string",
   "Keywords",
   value = "",
+  rows = 2,
   placeholder = "Enter keywords separated by commas...",
   width = "100%"
 ),
@@ -3866,7 +3889,8 @@ tags$details(
 # WORKBOOK
 # ============================================================
 
-div(
+if (FALSE) {
+  div(
   style = paste0(
     "background:#FFFFFF;",
     "border:1px solid #E5E7EB;",
@@ -3894,13 +3918,15 @@ div(
     accept = c(".xlsx")
   ),
 
-  p(
+ p(
     class = "small-note",
     "Upload a completed Data Source Preparation workbook or use the default workbook."
   )
 )
-    )
-  ),
+} 
+
+)   
+),  
 
   column(
     width = 8,
@@ -4049,12 +4075,16 @@ tabPanel(
   div(
     class = "rdcd-start-state",
 
-    h3("Browse the Source Index"),
-
-    p(
-      "Use this index to check whether a source is already listed. ",
-      "For update or removal requests, copy the exact Source ID and Data Source name shown below."
-    ),
+    tags$p(
+  "Browse this alphabetical index of all data sources currently included in the app. ",
+  "To suggest a new source or request an update to an existing listing, submit the ",
+  tags$a(
+    "Data Source Submission Form",
+    href = "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=GUsqSzXRDkKLsrHNI4mYzDCI8cfpjEVKhKqG7Q1ccnlUQlVBTFZXTVFDM1RUTElQVjRSSUlHVFVSMi4u",
+    target = "_blank"
+  ),
+  ". For an existing source, include its exact Source ID and Data Source name."
+),
 
     uiOutput("source_index_summary")
   ),
@@ -4414,7 +4444,7 @@ observeEvent(input$keyword_string, {
 
   if (nchar(keyword_text) > MAX_KEYWORD_CHARS) {
 
-    updateTextInput(
+    updateTextAreaInput(
       session,
       "keyword_string",
       value = substr(
@@ -4715,9 +4745,9 @@ output$results_table_container <- renderUI({
         h3("No matching sources found"),
 
         p(
-          "No sources matched these criteria. ",
-          "Try lowering the minimum match score, ",
-          "removing a filter, or broadening your search terms."
+          "No sources matched the words or filters you entered. ",
+          "Try checking the spelling, using a broader term, ",
+          "lowering the minimum match score, or removing a filter."
         )
       )
     )
