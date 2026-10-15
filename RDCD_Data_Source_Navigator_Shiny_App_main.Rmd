@@ -3576,8 +3576,10 @@ gtag('config', 'G-DELRGDLFF2', {
   send_page_view: false
 });
 
-Shiny.addCustomMessageHandler('rdcdRecordSearch', function(message) {
-  gtag('event', 'run_search');
+document.addEventListener('click', function(event) {
+  if (event.target && event.target.id === 'run_search') {
+    gtag('event', 'run_search');
+  }
 });
 
   // -------------------------------------------------
@@ -4129,8 +4131,6 @@ tabPanel(
 ```{r server, context="server", echo=FALSE}
 
 observeEvent(input$run_search, {
-  session$sendCustomMessage("rdcdRecordSearch", list())
-
   message(
     paste(
       "RDCD_RUN_SEARCH",
