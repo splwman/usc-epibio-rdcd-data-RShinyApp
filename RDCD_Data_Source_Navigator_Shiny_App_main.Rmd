@@ -3573,7 +3573,8 @@ function gtag() {
 gtag('js', new Date());
 
 gtag('config', 'G-DELRGDLFF2', {
-  send_page_view: false
+  send_page_view: false,
+  debug_mode: true
 });
 
 document.addEventListener('click', function(event) {
